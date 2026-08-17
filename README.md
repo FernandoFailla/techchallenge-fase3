@@ -24,7 +24,10 @@ O projeto requer Python 3.13 e utiliza [uv](https://docs.astral.sh/uv/) para ger
 
 ```bash
 uv sync --all-groups
+uv run pre-commit install
 ```
+
+Os hooks locais executam `ruff check`, `ruff format --check`, `mypy` e `pytest` antes de cada commit. Para executar a mesma validação manualmente em todo o repositório, use `uv run pre-commit run --all-files`.
 
 ## Dataset
 

@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Educational NLP triage prototype for FIAP Tech Challenge Phase 3."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "altair>=6.2.2",
+    "scikit-learn>=1.9.0",
+]
 
 [dependency-groups]
 dev = [
@@ -13,6 +16,7 @@ dev = [
     "marimo>=0.23.16",
     "mypy>=1.17.1",
     "polars>=1.43.2",
+    "pre-commit>=4.6.2",
     "pytest>=8.4.1",
     "ruff>=0.12.8",
 ]
@@ -27,6 +31,12 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.py" = ["E501"]
+
+[tool.ruff.format]
+exclude = ["notebooks/*.py"]
 
 [tool.mypy]
 python_version = "3.13"
