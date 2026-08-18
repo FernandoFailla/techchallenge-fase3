@@ -12,7 +12,7 @@ def _():
     import marimo as mo
     import polars as pl
     from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import StratifiedGroupKFold
     from sklearn.neighbors import NearestNeighbors
 
 
@@ -20,10 +20,10 @@ def _():
         NearestNeighbors,
         Path,
         TfidfVectorizer,
+        StratifiedGroupKFold,
         alt,
         mo,
         pl,
-        train_test_split,
     )
 
 
@@ -253,12 +253,78 @@ def _(NearestNeighbors, TfidfVectorizer, alt, dataset, pl):
     _vectors = TfidfVectorizer(
         analyzer="char_wb", ngram_range=(3, 5), min_df=2
     ).fit_transform(_texts)
-    _distances, _ = NearestNeighbors(
+    _nearest_distances, _ = NearestNeighbors(
         n_neighbors=2, metric="cosine", n_jobs=-1
     ).fit(_vectors).kneighbors(_vectors)
 
     nearest_similarity = pl.DataFrame(
-        {"similarity": (1 - _distances[:, 1]).tolist()}
+        {"similarity": (1 - _nearest_distances[:, 1]).tolist()}
+    )
+    _candidate_distances, _candidate_indices = NearestNeighbors(
+        radius=0.10, metric="cosine", n_jobs=-1
+    ).fit(_vectors).radius_neighbors(_vectors, return_distance=True)
+    _candidate_rows = []
+    for _source_index, (_distances, _indices) in enumerate(
+        zip(_candidate_distances, _candidate_indices, strict=True)
+    ):
+        for _distance, _neighbor_index in zip(_distances, _indices, strict=True):
+            if _source_index < _neighbor_index:
+                _candidate_rows.append(
+                    {
+                        "source_row_index": _source_index,
+                        "neighbor_row_index": _neighbor_index,
+                        "similarity": 1 - _distance,
+                    }
+                )
+
+    near_duplicate_pairs = (
+        pl.DataFrame(
+            _candidate_rows,
+            schema={
+                "source_row_index": pl.UInt32,
+                "neighbor_row_index": pl.UInt32,
+                "similarity": pl.Float64,
+            },
+        )
+        .filter(pl.col("similarity") >= 0.90)
+        .join(
+            dataset.with_row_index("source_row_index").select(
+                "source_row_index", pl.col("id").alias("source_record_id")
+            ),
+            on="source_row_index",
+        )
+        .join(
+            dataset.with_row_index("neighbor_row_index").select(
+                "neighbor_row_index", pl.col("id").alias("neighbor_record_id")
+            ),
+            on="neighbor_row_index",
+        )
+    )
+
+    _parents = list(range(dataset.height))
+
+    def _find_root(index: int) -> int:
+        while _parents[index] != index:
+            _parents[index] = _parents[_parents[index]]
+            index = _parents[index]
+        return index
+
+    def _union(source_index: int, neighbor_index: int) -> None:
+        source_root = _find_root(source_index)
+        neighbor_root = _find_root(neighbor_index)
+        if source_root != neighbor_root:
+            _parents[neighbor_root] = source_root
+
+    for _source_index, _neighbor_index in near_duplicate_pairs.select(
+        "source_row_index", "neighbor_row_index"
+    ).iter_rows():
+        _union(_source_index, _neighbor_index)
+
+    duplicate_clusters = pl.DataFrame(
+        {
+            "row_index": pl.Series(range(dataset.height), dtype=pl.UInt32),
+            "duplicate_cluster": [f"cluster-{_find_root(index)}" for index in range(dataset.height)],
+        }
     )
     similarity_bands = (
         nearest_similarity.with_columns(
@@ -292,26 +358,32 @@ def _(NearestNeighbors, TfidfVectorizer, alt, dataset, pl):
 
     similarity_chart
 
-    return (similarity_bands,)
+    return duplicate_clusters, near_duplicate_pairs, similarity_bands
 
 
 @app.cell(hide_code=True)
-def _(dataset, mo, similarity_bands):
+def _(dataset, duplicate_clusters, mo, near_duplicate_pairs, pl, similarity_bands):
     _similarity_counts = dict(similarity_bands.iter_rows())
     _template_candidates = _similarity_counts.get("0.80-0.89", 0)
-    _near_duplicates = _similarity_counts.get(">= 0.90", 0)
+    _near_duplicates = near_duplicate_pairs.height
     _exact_duplicates = dataset.height - dataset.get_column("patient_text_en").n_unique()
+    _multi_record_clusters = (
+        duplicate_clusters.group_by("duplicate_cluster")
+        .len()
+        .filter(pl.col("len") > 1)
+        .height
+    )
 
     mo.md(f"""
     ### O que isso significa
 
-    Há **{_exact_duplicates} duplicatas exatas**, **{_near_duplicates} textos com
-    vizinho de similaridade ≥ 0,90** e **{_template_candidates} na faixa 0,80–0,89**.
+    Há **{_exact_duplicates} duplicatas exatas**, **{_near_duplicates} pares candidatos
+    com similaridade ≥ 0,90**, **{_multi_record_clusters} clusters com mais de um
+    registro** e **{_template_candidates} textos na faixa 0,80–0,89**.
 
-    As duas últimas contagens representam documentos candidatos, não pares únicos e
-    nem confirmação clínica de cópia. Candidatos acima de 0,90 precisam ser agrupados
-    ou revisados antes de selar o split final; a faixa intermediária serve para
-    investigar templates.
+    Pares acima de 0,90 não são confirmação clínica de cópia, mas seus IDs e scores
+    são retidos para revisão. Todo cluster candidato é mantido integralmente em um
+    único conjunto no split; a faixa intermediária serve para investigar templates.
     """)
 
     return
@@ -331,6 +403,21 @@ def _(mo):
 
 @app.cell
 def _(alt, dataset, pl):
+    _label_term_pattern = r"(?i)\b(?:low|medium|high)\b"
+    label_term_records = dataset.select(
+        "id",
+        "urgency",
+        pl.col("patient_text_en").str.contains(_label_term_pattern).alias("has_label_term"),
+        (
+            ((pl.col("urgency") == "low") & pl.col("patient_text_en").str.contains(r"(?i)\blow\b"))
+            | ((pl.col("urgency") == "medium") & pl.col("patient_text_en").str.contains(r"(?i)\bmedium\b"))
+            | ((pl.col("urgency") == "high") & pl.col("patient_text_en").str.contains(r"(?i)\bhigh\b"))
+        ).alias("has_matching_label_term"),
+    )
+    label_term_summary = label_term_records.select(
+        pl.col("has_label_term").sum().alias("records_with_label_term"),
+        pl.col("has_matching_label_term").sum().alias("records_with_matching_label_term"),
+    )
     _term_rows = []
     for _term in ("low", "medium", "high"):
         _counts = (
@@ -357,31 +444,33 @@ def _(alt, dataset, pl):
     term_target_chart = (
         _term_base.mark_bar()
         + _term_base.mark_text(dy=-7).encode(text="records:Q")
-    ).properties(title="Palavra encontrada versus target real", width=500, height=300).interactive(
+    ).properties(title="Ocorrências termo-registro versus target real", width=500, height=300).interactive(
         name="label-term-zoom"
     )
 
     term_target_chart
 
-    return (term_target_counts,)
+    return label_term_summary, term_target_counts
 
 
 @app.cell(hide_code=True)
-def _(mo, pl, term_target_counts):
-    _matched_target = term_target_counts.filter(
-        pl.col("term") == pl.col("urgency")
-    ).get_column("records").sum()
-    _term_total = term_target_counts.get_column("records").sum()
+def _(label_term_summary, mo):
+    _summary = label_term_summary.row(0, named=True)
+    _records_with_label_term = _summary["records_with_label_term"]
+    _records_with_matching_label_term = _summary["records_with_matching_label_term"]
 
     mo.md(f"""
     ### O que isso significa
 
-    Dos **{_term_total} registros** com palavras iguais aos rótulos,
-    **{_matched_target} ({_matched_target / _term_total:.1%})** têm palavra e target
-    coincidentes. Os demais aparecem em outra classe.
+    Há **{_records_with_label_term} registros únicos** com pelo menos uma palavra igual
+    a um rótulo. Destes, **{_records_with_matching_label_term}
+    ({_records_with_matching_label_term / _records_with_label_term:.1%})** contêm a
+    palavra correspondente ao target publicado.
 
-    As palavras não entregam deterministicamente o target, mas a associação não pode
-    ser ignorada. Antes do treino, esses registros devem ser revisados de forma
+    O gráfico mostra ocorrências termo-registro e pode contar um mesmo registro em mais
+    de uma barra; o percentual acima é calculado somente sobre registros únicos. As
+    palavras não entregam deterministicamente o target, mas a associação não pode ser
+    ignorada. Antes do treino, esses registros devem ser revisados de forma
     controlada, sem serem exibidos no notebook, e o desempenho deve ser comparado com
     e sem esses termos.
     """)
@@ -456,37 +545,45 @@ def _(mo):
     ## 7. Como reservar treino, validação e teste?
 
     Sem paciente e tempo, o melhor fallback disponível é uma divisão aleatória,
-    estratificada e reproduzível. Usamos 70% para treino, 15% para validação e 15%
-    para teste, com `seed=42`. O teste fica reservado para a avaliação final.
+    estratificada por clusters de similaridade e reproduzível. Usamos 70% para treino,
+    15% para validação e 15% para teste, com `seed=42`. O teste fica reservado para a
+    avaliação final e nenhum cluster de quase duplicatas pode atravessar os conjuntos.
     """)
     return
 
 
 @app.cell
-def _(alt, dataset, pl, train_test_split):
+def _(StratifiedGroupKFold, alt, dataset, duplicate_clusters, pl):
     _indices = list(range(dataset.height))
     _targets = dataset.get_column("urgency").to_list()
-    _development, _test = train_test_split(
-        _indices, test_size=0.15, random_state=42, stratify=_targets
+    _groups = duplicate_clusters.sort("row_index").get_column("duplicate_cluster").to_list()
+    _fold_assignments = [0] * dataset.height
+    _splitter = StratifiedGroupKFold(n_splits=20, shuffle=True, random_state=42)
+    for _fold, (_, _fold_indices) in enumerate(_splitter.split(_indices, _targets, _groups)):
+        for _row_index in _fold_indices:
+            _fold_assignments[_row_index] = _fold
+
+    split_manifest = (
+        dataset.with_row_index("row_index")
+        .select("row_index", "id", "urgency")
+        .join(duplicate_clusters, on="row_index")
+        .with_columns(pl.Series("fold", _fold_assignments))
+        .with_columns(
+            pl.when(pl.col("fold") < 14)
+            .then(pl.lit("train"))
+            .when(pl.col("fold") < 17)
+            .then(pl.lit("validation"))
+            .otherwise(pl.lit("test"))
+            .alias("split")
+        )
     )
-    _development_targets = [_targets[index] for index in _development]
-    _train, _validation = train_test_split(
-        _development,
-        test_size=3 / 17,
-        random_state=42,
-        stratify=_development_targets,
+    _cross_split_clusters = (
+        split_manifest.group_by("duplicate_cluster")
+        .agg(pl.col("split").n_unique().alias("split_count"))
+        .filter(pl.col("split_count") > 1)
     )
-    split_manifest = pl.concat(
-        [
-            pl.DataFrame({"row_index": _train, "split": "train"}),
-            pl.DataFrame({"row_index": _validation, "split": "validation"}),
-            pl.DataFrame({"row_index": _test, "split": "test"}),
-        ]
-    ).join(
-        dataset.with_row_index().select("index", "id", "urgency"),
-        left_on="row_index",
-        right_on="index",
-    )
+    if _cross_split_clusters.height:
+        raise RuntimeError("A near-duplicate cluster crossed a data split.")
     split_distribution = split_manifest.group_by(["split", "urgency"]).len(name="records")
     _split_data = alt.Data(values=split_distribution.to_dicts())
     _split_base = alt.Chart(_split_data).encode(
@@ -506,7 +603,7 @@ def _(alt, dataset, pl, train_test_split):
 
     split_chart
 
-    return (split_manifest,)
+    return split_manifest, split_distribution
 
 
 @app.cell(hide_code=True)
@@ -520,7 +617,8 @@ def _(mo, split_manifest):
 
     O manifesto reproduzível contém **{_split_sizes['train']} registros de treino**,
     **{_split_sizes['validation']} de validação** e **{_split_sizes['test']} de teste**.
-    As proporções das classes foram preservadas.
+    As proporções das classes foram aproximadas por estratificação de clusters, sem
+    permitir que um cluster de quase duplicatas atravesse os conjuntos.
 
     O teste está definido e não deve orientar limpeza, vocabulário, TF-IDF ou
     hiperparâmetros. Esta divisão é um fallback metodológico: sem `patient_id` e
@@ -532,31 +630,31 @@ def _(mo, split_manifest):
 
 
 @app.cell(hide_code=True)
-def _(mo, pl, similarity_bands, term_target_counts):
-    _matched_target = term_target_counts.filter(
-        pl.col("term") == pl.col("urgency")
-    ).get_column("records").sum()
-    _near_counts = dict(similarity_bands.iter_rows())
-    _near = _near_counts.get(">= 0.90", 0)
-    _template = _near_counts.get("0.80-0.89", 0)
+def _(label_term_summary, mo, near_duplicate_pairs):
+    _term_summary = label_term_summary.row(0, named=True)
+    _term_records = _term_summary["records_with_label_term"]
+    _matching_term_records = _term_summary["records_with_matching_label_term"]
+    _near_pairs = near_duplicate_pairs.height
 
     mo.md(f"""
     ## 8. Decisão
 
-    ### B — pronto para modelagem somente após revisão dos candidatos semelhantes
+    ### B — pronto para modelagem com auditorias e limitações documentadas
 
     Os quatro pontos foram tratados:
 
-    1. os 112 registros com palavras dos rótulos foram auditados por associação com
-       o target; {_matched_target} coincidem com a classe publicada;
-    2. foram encontrados {_near} textos com similaridade ≥ 0,90 e {_template} na
-       faixa de possíveis templates;
+    1. {_term_records} registros únicos com palavras dos rótulos foram auditados por
+       associação com o target; {_matching_term_records} contêm a palavra da classe
+       publicada;
+    2. foram encontrados {_near_pairs} pares candidatos com similaridade ≥ 0,90; pares
+       e scores são retidos em clusters para impedir contaminação entre os conjuntos;
     3. está registrado que a base não permite split por paciente ou tempo;
-    4. foi criado um split estratificado e determinístico 70/15/15, com teste
-       reservado.
+    4. foi criado um split determinístico 70/15/15, estratificado por clusters, com
+       teste reservado e verificação de que nenhum cluster cruza conjuntos.
 
-    Antes do treino, os candidatos de similaridade ≥ 0,90 precisam ser revisados e,
-    se confirmados como cópias, mantidos no mesmo conjunto.
+    Antes do treino, os pares candidatos precisam ser revisados. Se confirmados como
+    cópias, devem permanecer no mesmo cluster ou ser removidos antes de uma nova
+    divisão.
     """)
 
     return
