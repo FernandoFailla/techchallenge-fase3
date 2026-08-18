@@ -29,6 +29,14 @@ uv run pre-commit install
 
 Os hooks locais executam `ruff check`, `ruff format --check`, `mypy` e `pytest` antes de cada commit. Para executar a mesma validação manualmente em todo o repositório, use `uv run pre-commit run --all-files`.
 
+## Exploração
+
+Após recuperar os dados com `make pull-data`, execute:
+
+```bash
+uv run marimo edit notebooks/02_exploratory_data_analysis.py
+```
+
 ## Dataset
 
 O protótipo utiliza o dataset público [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage). Seu uso está condicionado à validação de origem, licença, schema e qualidade definida no gate de dados.
