@@ -24,6 +24,17 @@ O projeto requer Python 3.13 e utiliza [uv](https://docs.astral.sh/uv/) para ger
 
 ```bash
 uv sync --all-groups
+uv run pre-commit install
+```
+
+Os hooks locais executam `ruff check`, `ruff format --check`, `mypy` e `pytest` antes de cada commit. Para executar a mesma validação manualmente em todo o repositório, use `make check`.
+
+## Exploração
+
+Após recuperar os dados com `make pull-data`, execute:
+
+```bash
+uv run marimo edit notebooks/02_exploratory_data_analysis.py
 ```
 
 ## Dataset

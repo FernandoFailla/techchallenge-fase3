@@ -3,12 +3,16 @@
 KAGGLE_DATASET := alanjafari/kurmed-triage/versions/1
 DATA_DIR := data/raw
 
-.PHONY: help download-data pull-data
+.PHONY: help check download-data pull-data
 
 help:
 	@printf "Available targets:\n"
+	@printf "  check          Run all repository quality checks\n"
 	@printf "  download-data  Download KurMed-Triage v1 to %s\n" "$(DATA_DIR)"
 	@printf "  pull-data      Download the DVC-tracked dataset\n"
+
+check:
+	@uv run pre-commit run --all-files
 
 download-data:
 	@test -n "$$KAGGLE_API_TOKEN" || (printf "%s\n" "KAGGLE_API_TOKEN must be exported before running make download-data." >&2; exit 1)
