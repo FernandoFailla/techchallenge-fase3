@@ -1,0 +1,24 @@
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    command: standalone
+    user: "${AIRFLOW_UID:-50000}:0"
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/techchallenge/src
+      TECHCHALLENGE_ROOT: /opt/techchallenge
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'from urllib.request import urlopen; urlopen(\"http://localhost:8080/api/v2/monitor/health\")'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/opt/techchallenge/data
+      - airflow-home:/opt/airflow
+
+volumes:
+  airflow-home:

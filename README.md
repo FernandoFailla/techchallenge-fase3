@@ -29,6 +29,10 @@ uv run pre-commit install
 
 Os hooks locais executam `ruff check`, `ruff format --check`, `mypy` e `pytest` antes de cada commit. Para executar a mesma validação manualmente em todo o repositório, use `make check`.
 
+Para iniciar o Airflow local que materializa a base de modelagem, use `make airflow`. A DAG não publica dados no DVC; após revisar os artefatos gerados, a decisão de versioná-los é manual. Consulte a senha local gerada com `make airflow-password`.
+
+Se uma alteração de configuração ou permissões deixar o ambiente local inconsistente, execute `make airflow-reset` e inicie-o novamente. Esse comando remove apenas o estado local do Airflow.
+
 ## Exploração
 
 Após recuperar os dados com `make pull-data`, execute:
