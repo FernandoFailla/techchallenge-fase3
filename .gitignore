@@ -4,6 +4,8 @@ techchallengefase3.pdf
 !.env.example
 data/raw/*
 !data/raw/*.dvc
+data/processed/*
+!data/processed/*.dvc
 __pycache__/
 *.py[cod]
 .mypy_cache/
