@@ -7,7 +7,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from techchallenge.api import MAX_TEXT_LENGTH, LoadedChampion, create_app
+from techchallenge.api import (
+    DEFAULT_MODEL_URI,
+    MAX_TEXT_LENGTH,
+    LoadedChampion,
+    _parse_model_uri,
+    create_app,
+    get_model_uri,
+)
 
 
 class FakeModel:
@@ -101,3 +108,34 @@ def test_startup_fails_when_champion_cannot_be_loaded() -> None:
     with pytest.raises(RuntimeError, match="MLflow champion is unavailable"):
         with TestClient(_app_with_loader(unavailable_loader)):
             pass
+
+
+def test_model_uri_defaults_to_champion_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MLFLOW_MODEL_URI", raising=False)
+
+    assert get_model_uri() == DEFAULT_MODEL_URI
+    assert _parse_model_uri(get_model_uri()) == (
+        "triage-urgency-classifier",
+        "@champion",
+    )
+
+
+def test_model_uri_accepts_an_explicit_registry_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MLFLOW_MODEL_URI", "models:/triage-urgency-classifier/12")
+
+    assert _parse_model_uri(get_model_uri()) == ("triage-urgency-classifier", "12")
+
+
+@pytest.mark.parametrize(
+    "model_uri",
+    (
+        "runs:/123/model",
+        "models:/triage-urgency-classifier",
+        "models:/triage-urgency-classifier/one",
+    ),
+)
+def test_model_uri_rejects_non_deterministic_references(model_uri: str) -> None:
+    with pytest.raises(ValueError, match="MLFLOW_MODEL_URI"):
+        _parse_model_uri(model_uri)

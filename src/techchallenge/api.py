@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from techchallenge.tracking import get_tracking_uri
 
 MAX_TEXT_LENGTH: Final = 10_000
 MODEL_OUTPUT_COLUMN: Final = "urgency"
+DEFAULT_MODEL_URI: Final = f"models:/{MODEL_NAME}@{CHAMPION_ALIAS}"
 _METRICS_ENDPOINTS: Final = frozenset({"/predict", "/health", "/metrics"})
 
 
@@ -72,16 +74,45 @@ class HealthResponse(BaseModel):
 
 
 def load_champion() -> LoadedChampion:
-    """Resolve and load the champion once, failing startup if MLflow is unavailable."""
+    """Load the configured Registry model once, failing startup when unavailable."""
     tracking_uri = get_tracking_uri()
+    model_name, model_reference = _parse_model_uri(get_model_uri())
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_registry_uri(tracking_uri)
     client = mlflow.MlflowClient(tracking_uri=tracking_uri)
-    champion = client.get_model_version_by_alias(MODEL_NAME, CHAMPION_ALIAS)
-    model_version = champion.version
-    model_uri = f"models:/{MODEL_NAME}/{model_version}"
+    if model_reference.startswith("@"):
+        model_version = client.get_model_version_by_alias(
+            model_name, model_reference.removeprefix("@")
+        ).version
+    else:
+        model_version = model_reference
+    model_uri = f"models:/{model_name}/{model_version}"
     model = cast(PredictionModel, mlflow.pyfunc.load_model(model_uri))
     return LoadedChampion(model=model, model_version=model_version)
+
+
+def get_model_uri() -> str:
+    """Return the Registry model URI or its environment override."""
+    return os.environ.get("MLFLOW_MODEL_URI", DEFAULT_MODEL_URI)
+
+
+def _parse_model_uri(model_uri: str) -> tuple[str, str]:
+    """Accept only versioned or aliased Registry URIs for deterministic serving."""
+    prefix = "models:/"
+    if not model_uri.startswith(prefix):
+        raise ValueError("MLFLOW_MODEL_URI must be an MLflow Registry URI")
+    reference = model_uri.removeprefix(prefix)
+    if "@" in reference:
+        model_name, model_alias = reference.rsplit("@", maxsplit=1)
+        if model_name and model_alias and "/" not in model_alias:
+            return model_name, f"@{model_alias}"
+    elif "/" in reference:
+        model_name, model_version = reference.rsplit("/", maxsplit=1)
+        if model_name and model_version.isdigit():
+            return model_name, model_version
+    raise ValueError(
+        "MLFLOW_MODEL_URI must use models:/<name>@<alias> or models:/<name>/<version>"
+    )
 
 
 def create_app(*, model_loader: ModelLoader = load_champion) -> FastAPI:

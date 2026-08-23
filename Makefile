@@ -3,7 +3,7 @@
 KAGGLE_DATASET := alanjafari/kurmed-triage/versions/1
 DATA_DIR := data/raw
 
-.PHONY: help airflow airflow-down airflow-password airflow-reset check download-data mlflow mlflow-down pull-data
+.PHONY: api api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data mlflow mlflow-down pull-data
 
 help:
 	@printf "Available targets:\n"
@@ -11,8 +11,12 @@ help:
 	@printf "  airflow-down   Stop local Airflow standalone\n"
 	@printf "  airflow-password Show the generated local Airflow password\n"
 	@printf "  airflow-reset  Remove local Airflow state and containers\n"
+	@printf "  api            Start API and MLflow after a champion model is promoted\n"
+	@printf "  api-build      Build the API image\n"
+	@printf "  api-down       Stop the API and MLflow services\n"
 	@printf "  mlflow         Start local MLflow Tracking\n"
 	@printf "  mlflow-down    Stop local MLflow Tracking\n"
+	@printf "  docker-config  Validate the MLflow and API Compose configuration\n"
 	@printf "  check          Run all repository quality checks\n"
 	@printf "  download-data  Download KurMed-Triage v1 to %s\n" "$(DATA_DIR)"
 	@printf "  pull-data      Download the DVC-tracked dataset\n"
@@ -37,6 +41,18 @@ mlflow:
 
 mlflow-down:
 	@docker compose -f compose.mlflow.yml down
+
+api:
+	@docker compose -f compose.mlflow.yml --profile api up --build
+
+api-build:
+	@docker compose -f compose.mlflow.yml --profile api build api
+
+api-down:
+	@docker compose -f compose.mlflow.yml --profile api down
+
+docker-config:
+	@docker compose -f compose.mlflow.yml --profile api config --quiet
 
 download-data:
 	@test -n "$$KAGGLE_API_TOKEN" || (printf "%s\n" "KAGGLE_API_TOKEN must be exported before running make download-data." >&2; exit 1)

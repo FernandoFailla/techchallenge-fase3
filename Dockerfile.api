@@ -1,0 +1,35 @@
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS builder
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv==0.9.10
+
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY src ./src
+RUN uv sync --frozen --no-dev
+
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv
+
+RUN groupadd --gid 10001 api \
+    && useradd --create-home --gid api --shell /usr/sbin/nologin --uid 10001 api
+
+WORKDIR /app
+
+COPY --chown=api:api --from=builder /app/.venv /opt/venv
+COPY --chown=api:api --from=builder /app/src ./src
+
+USER api
+
+EXPOSE 8000
+
+CMD ["uvicorn", "techchallenge.api:app", "--host", "0.0.0.0", "--port", "8000"]

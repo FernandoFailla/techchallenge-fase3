@@ -1,0 +1,16 @@
+.dvc/
+.env
+.env.*
+.git/
+.github/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+data/
+docs/
+notebooks/
+tests/
+*.py[cod]
+techchallengefase3.pdf
