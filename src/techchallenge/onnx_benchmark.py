@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from statistics import fmean
 from time import perf_counter_ns
-from typing import Callable, Final
+from typing import Callable, Final, cast
 
 import numpy as np
 import onnxruntime as ort
@@ -106,24 +106,10 @@ class OnnxTextClassifier:
     """Keep TF-IDF in process and run only the Random Forest in ONNX Runtime."""
 
     def __init__(self, pipeline: Pipeline) -> None:
-        vectorizer = pipeline.named_steps.get("tfidf")
-        classifier = pipeline.named_steps.get("random_forest")
-        if not isinstance(vectorizer, TfidfVectorizer):
-            raise ValueError("Pipeline tfidf step must be a TfidfVectorizer")
-        if not isinstance(classifier, RandomForestClassifier):
-            raise ValueError(
-                "Pipeline random_forest step must be a RandomForestClassifier"
-            )
-
-        feature_count = len(vectorizer.get_feature_names_out())
-        onnx_model = convert_sklearn(
-            classifier,
-            initial_types=[("features", FloatTensorType([None, feature_count]))],
-            options={id(classifier): {"zipmap": False}},
-        )
+        vectorizer, _ = pipeline_components(pipeline)
         self._vectorizer = vectorizer
         self._session = ort.InferenceSession(
-            onnx_model.SerializeToString(), providers=["CPUExecutionProvider"]
+            serialize_onnx_classifier(pipeline), providers=["CPUExecutionProvider"]
         )
         self._input_name = self._session.get_inputs()[0].name
 
@@ -138,6 +124,31 @@ class OnnxTextClassifier:
     def predict_one(self, text: str) -> str:
         """Run one complete text-to-class inference path."""
         return self.predict((text,))[0]
+
+
+def pipeline_components(
+    pipeline: Pipeline,
+) -> tuple[TfidfVectorizer, RandomForestClassifier]:
+    """Return the approved KAN-10 TF-IDF and Random Forest components."""
+    vectorizer = pipeline.named_steps.get("tfidf")
+    classifier = pipeline.named_steps.get("random_forest")
+    if not isinstance(vectorizer, TfidfVectorizer):
+        raise ValueError("Pipeline tfidf step must be a TfidfVectorizer")
+    if not isinstance(classifier, RandomForestClassifier):
+        raise ValueError("Pipeline random_forest step must be a RandomForestClassifier")
+    return vectorizer, classifier
+
+
+def serialize_onnx_classifier(pipeline: Pipeline) -> bytes:
+    """Serialize the approved KAN-10 Random Forest to an ONNX binary."""
+    vectorizer, classifier = pipeline_components(pipeline)
+    feature_count = len(vectorizer.get_feature_names_out())
+    onnx_model = convert_sklearn(
+        classifier,
+        initial_types=[("features", FloatTensorType([None, feature_count]))],
+        options={id(classifier): {"zipmap": False}},
+    )
+    return cast(bytes, onnx_model.SerializeToString())
 
 
 def run_and_log_onnx_benchmark(

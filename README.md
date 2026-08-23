@@ -64,6 +64,18 @@ make mlflow
 uv run marimo edit notebooks/05_onnx_benchmark.py
 ```
 
+O KAN-13 reproduz o fluxo aprovado do KAN-10 e registra o PyFunc local
+`triage-urgency-classifier`. O bundle contém o vetor TF-IDF serializado, o
+classificador ONNX e o mapa de classes para inferência; o MLflow registra apenas
+proveniência, métricas agregadas e hashes como metadados, sem expor vocabulário,
+textos clínicos, IDs ou segredos. O alias `champion` só é atribuído após baixar
+o bundle do Registry e validar todos os hashes.
+
+```bash
+make mlflow
+uv run marimo edit notebooks/06_mlflow_model_registry.py
+```
+
 ## Dataset
 
 O protótipo utiliza o dataset público [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage). Seu uso está condicionado à validação de origem, licença, schema e qualidade definida no gate de dados.
