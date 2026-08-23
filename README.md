@@ -35,6 +35,38 @@ Se uma alteração de configuração ou permissões deixar o ambiente local inco
 
 Para iniciar o MLflow Tracking local, use `make mlflow`. O servidor fica disponível em `http://localhost:5000` e persiste seu banco SQLite e artefatos em volume Docker.
 
+## API de inferência
+
+A API FastAPI é executada em um contêiner não-root e não inclui dados, artefatos de
+modelo ou credenciais na imagem. Ela recupera o modelo pelo MLflow no startup, logo é
+necessário promover o alias `champion` antes de iniciá-la. O Compose mantém a API em um
+profile separado para permitir o bootstrap do MLflow e o treinamento inicial.
+
+```bash
+# Primeiro bootstrap: inicia somente o MLflow, executa a DAG e promove o champion.
+make mlflow
+make airflow
+
+# Depois que o champion existir, inicia MLflow e API.
+make api
+```
+
+A API fica disponível em `http://localhost:8000`. O healthcheck só fica saudável após
+o carregamento do modelo e pode ser consultado sem enviar texto clínico:
+
+```bash
+curl http://localhost:8000/health
+```
+
+O serviço `api` usa `MLFLOW_TRACKING_URI=http://mlflow:5000` internamente. Para
+selecionar outro modelo promovido, defina `MLFLOW_MODEL_URI` com uma URI de Registry
+determinística antes de `make api`, por exemplo
+`models:/triage-urgency-classifier@champion` ou
+`models:/triage-urgency-classifier/3`. A imagem é construída com `uv.lock` e copia
+somente `pyproject.toml`, `uv.lock`, `README.md` e `src/`; `.dockerignore` exclui dados
+e arquivos de ambiente do contexto de build. Valide o Compose com `make docker-config`
+e construa apenas a imagem com `make api-build`.
+
 A DAG manual `training_pipeline` executa KAN-11, KAN-10 e KAN-13 uma única vez,
 na ordem de validação, treinamento, benchmark e registro. Inicie `make mlflow`
 antes de `make airflow`; o contêiner do Airflow usa `host.docker.internal:5000` por
