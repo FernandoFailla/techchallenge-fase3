@@ -101,6 +101,18 @@ def test_metrics_do_not_use_submitted_text_or_error_identifiers_as_labels() -> N
     assert 'status="200"' in metrics.text
 
 
+def test_metrics_use_a_bounded_endpoint_label_for_unmatched_routes() -> None:
+    unmatched_path = "/unmatched-route-with-an-identifier"
+
+    with TestClient(_app_with_loader()) as client:
+        response = client.get(unmatched_path)
+        metrics = client.get("/metrics")
+
+    assert response.status_code == 404
+    assert unmatched_path not in metrics.text
+    assert 'endpoint="unknown",method="GET",status="404"' in metrics.text
+
+
 def test_startup_fails_when_champion_cannot_be_loaded() -> None:
     def unavailable_loader() -> LoadedChampion:
         raise RuntimeError("MLflow champion is unavailable")

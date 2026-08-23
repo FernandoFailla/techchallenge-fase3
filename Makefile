@@ -3,7 +3,7 @@
 KAGGLE_DATASET := alanjafari/kurmed-triage/versions/1
 DATA_DIR := data/raw
 
-.PHONY: api api-benchmark api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data mlflow mlflow-down pull-data
+.PHONY: api api-benchmark api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data mlflow mlflow-down observability observability-down pull-data
 
 help:
 	@printf "Available targets:\n"
@@ -11,13 +11,15 @@ help:
 	@printf "  airflow-down   Stop local Airflow standalone\n"
 	@printf "  airflow-password Show the generated local Airflow password\n"
 	@printf "  airflow-reset  Remove local Airflow state and containers\n"
-	@printf "  api            Start API and MLflow after a champion model is promoted\n"
+	@printf "  api            Start the complete observability stack after a champion model is promoted\n"
 	@printf "  api-benchmark  Benchmark the local API HTTP latency and log aggregates to MLflow\n"
 	@printf "  api-build      Build the API image\n"
-	@printf "  api-down       Stop the API and MLflow services\n"
-	@printf "  mlflow         Start local MLflow Tracking\n"
-	@printf "  mlflow-down    Stop local MLflow Tracking\n"
-	@printf "  docker-config  Validate the MLflow and API Compose configuration\n"
+	@printf "  api-down       Stop the complete observability stack\n"
+	@printf "  mlflow         Start only local MLflow Tracking for the first bootstrap\n"
+	@printf "  mlflow-down    Stop the local MLflow service\n"
+	@printf "  observability  Start API, MLflow, Prometheus, and Grafana\n"
+	@printf "  observability-down Stop and remove the observability stack containers\n"
+	@printf "  docker-config  Validate the observability Compose configuration\n"
 	@printf "  check          Run all repository quality checks\n"
 	@printf "  download-data  Download KurMed-Triage v1 to %s\n" "$(DATA_DIR)"
 	@printf "  pull-data      Download the DVC-tracked dataset\n"
@@ -38,25 +40,31 @@ airflow-reset:
 	@AIRFLOW_UID="$$(id -u)" docker compose -f compose.airflow.yml down --volumes --remove-orphans
 
 mlflow:
-	@docker compose -f compose.mlflow.yml up --build
+	@docker compose -f compose.mlflow.yml up --build mlflow
 
 mlflow-down:
-	@docker compose -f compose.mlflow.yml down
+	@docker compose -f compose.mlflow.yml stop mlflow
 
 api:
-	@docker compose -f compose.mlflow.yml --profile api up --build
+	@docker compose -f compose.mlflow.yml up --build
 
 api-benchmark:
 	@uv run python -m techchallenge.http_benchmark
 
 api-build:
-	@docker compose -f compose.mlflow.yml --profile api build api
+	@docker compose -f compose.mlflow.yml build api
 
 api-down:
-	@docker compose -f compose.mlflow.yml --profile api down
+	@docker compose -f compose.mlflow.yml down
+
+observability:
+	@docker compose -f compose.mlflow.yml up --build
+
+observability-down:
+	@docker compose -f compose.mlflow.yml down
 
 docker-config:
-	@docker compose -f compose.mlflow.yml --profile api config --quiet
+	@docker compose -f compose.mlflow.yml config --quiet
 
 download-data:
 	@test -n "$$KAGGLE_API_TOKEN" || (printf "%s\n" "KAGGLE_API_TOKEN must be exported before running make download-data." >&2; exit 1)
