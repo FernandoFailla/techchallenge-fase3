@@ -33,7 +33,7 @@ Para iniciar o Airflow local que materializa a base de modelagem, use `make airf
 
 Se uma alteração de configuração ou permissões deixar o ambiente local inconsistente, execute `make airflow-reset` e inicie-o novamente. Esse comando remove apenas o estado local do Airflow.
 
-Para iniciar o MLflow Tracking local, use `make mlflow`. O servidor fica disponível em `http://localhost:5000` e persiste seu banco SQLite e artefatos em volume Docker.
+Para iniciar somente o MLflow Tracking no primeiro bootstrap, use `make mlflow`. O servidor fica disponível em `http://localhost:5000` e persiste seu banco SQLite e artefatos no volume Docker `mlflow-store`.
 
 ## API de inferência
 
@@ -47,7 +47,7 @@ profile separado para permitir o bootstrap do MLflow e o treinamento inicial.
 make mlflow
 make airflow
 
-# Depois que o champion existir, inicia MLflow e API.
+# Depois que o champion existir, inicia API, MLflow, Prometheus e Grafana.
 make api
 ```
 
@@ -82,6 +82,26 @@ determinística antes de `make api`, por exemplo
 somente `pyproject.toml`, `uv.lock`, `README.md` e `src/`; `.dockerignore` exclui dados
 e arquivos de ambiente do contexto de build. Valide o Compose com `make docker-config`
 e construa apenas a imagem com `make api-build`.
+
+## Observabilidade
+
+Depois que existir um `champion`, `make observability` sobe a stack final: API,
+MLflow, Prometheus e Grafana. Os endpoints locais sao `http://localhost:5000`,
+`http://localhost:8000`, `http://localhost:9090` e `http://localhost:3000`.
+No primeiro acesso ao Grafana, use as credenciais locais padrao `admin`/`admin` e
+altere a senha quando solicitado.
+
+O Prometheus coleta `api:8000/metrics` a cada 15 segundos. O dashboard
+provisionado **Observabilidade da API** apresenta o total de requisicoes de
+inferencia, latencia p95 e taxa de respostas 5xx. As consultas filtram
+`endpoint="/predict"`, evitando que os scrapes de `/metrics` alterem os paineis.
+As metricas usam somente os labels de cardinalidade limitada `endpoint`, `method`
+e `status`; texto submetido, detalhes de excecao e identificadores nao sao labels
+nem sao persistidos.
+
+Use `make observability-down` para remover os containers sem apagar os volumes de
+MLflow, Prometheus ou Grafana. Use `make docker-config` antes de iniciar a stack
+para validar a configuracao do Compose.
 
 A DAG manual `training_pipeline` executa KAN-11, KAN-10 e KAN-13 uma única vez,
 na ordem de validação, treinamento, benchmark e registro. Inicie `make mlflow`
