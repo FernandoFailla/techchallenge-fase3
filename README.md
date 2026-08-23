@@ -1,114 +1,275 @@
 # Tech Challenge - Fase 3
 
-Protótipo educacional de NLP para classificar uma queixa textual em inglês como
-`normal`, `atencao` ou `urgente`. Ele demonstra rastreabilidade de dados e
-modelos, orquestração, API, observabilidade e otimização de inferência.
+Protótipo educacional de NLP que recebe uma queixa textual em inglês e a
+classifica como `normal`, `atencao` ou `urgente`. O repositório demonstra o
+ciclo de vida completo de um modelo: dados versionados, treinamento
+orquestrado, rastreabilidade, API, observabilidade, otimização e CI.
 
-> Não tem validade clínica. Não use para diagnóstico, atendimento ou decisão
-> médica real.
+> **Aviso importante:** isto não é um produto clínico. Não use para diagnóstico,
+> atendimento, priorização ou qualquer decisão médica real.
 
-## Arquitetura
+## Comece Aqui
+
+Se esta é sua primeira vez no projeto, siga esta sequência sem pular etapas:
+
+1. Instale os requisitos descritos em [Pré-requisitos](#pré-requisitos).
+2. Clone o repositório, copie `.env.example` para `.env` e configure o acesso ao
+   remote DVC, conforme [Preparar a máquina](#1-preparar-a-máquina).
+3. Recupere os dados versionados com `make pull-data`.
+4. Inicie MLflow e Airflow, execute a DAG `training_pipeline` uma vez para criar
+   o primeiro modelo `champion`.
+5. Inicie API, Prometheus e Grafana com `make observability`.
+6. Verifique `/health`, faça uma chamada de contrato a `/predict` e abra o
+   dashboard.
+
+O primeiro bootstrap demora mais porque treina, avalia, converte e registra um
+modelo. Depois disso, os volumes Docker preservam o MLflow e basta iniciar a
+stack de observabilidade novamente.
+
+## O Que Cada Componente Faz
 
 ```text
 KurMed-Triage v1 (fonte pública)
-             |
-     DVC + Google Drive remoto
-             |
- data/raw -> data/processed
-             |
+              |
+      DVC + Google Drive remoto
+              |
+  data/raw -> data/processed
+              |
  Airflow manual: validar -> treinar -> ONNX -> registrar/promover
-             |                                  |
-             +------------------------------> MLflow + SQLite + artefatos
-                                                    |
-                              triage-urgency-classifier@champion
-                                                    |
+              |                                  |
+              +------------------------------> MLflow + SQLite + artefatos
+                                                     |
+                               triage-urgency-classifier@champion
+                                                     |
  FastAPI (/predict, /health, /metrics) <- Prometheus <- Grafana
 ```
 
-O Airflow é executado separadamente da stack de serving. A API é stateless,
-carrega uma única versão `champion` no startup e não troca modelo em runtime.
-O GitHub Actions executa `make check` e constrói a imagem da API em `push` e
-pull request.
+| Componente | Papel | Onde acessar |
+|---|---|---|
+| DVC | Recupera a versão aprovada de dados e artefatos | Linha de comando |
+| Airflow | Executa o pipeline manual de preparação e treinamento | `http://localhost:8080` |
+| MLflow | Guarda experimentos, modelos e o alias `champion` | `http://localhost:5000` |
+| FastAPI | Serve o modelo promovido | `http://localhost:8000` |
+| Prometheus | Coleta métricas da API | `http://localhost:9090` |
+| Grafana | Mostra requisições, p95 e taxa de erros | `http://localhost:3000` |
 
-## Bootstrap Local
+Airflow é iniciado separadamente da stack de serving. A API carrega uma única
+versão do modelo no startup. Para aplicar outra versão, altere o alias no MLflow
+e reinicie a API; não existe troca silenciosa de modelo em runtime.
 
-Requisitos: Docker Compose, Python 3.13, `uv` e acesso ao remote DVC
-compartilhado. Copie `.env.example` para `.env`, preencha somente as credenciais
-OAuth do Google Drive recebidas do mantenedor e não versione o arquivo.
+## Pré-requisitos
+
+- Git.
+- Python 3.13 ou superior.
+- [uv](https://docs.astral.sh/uv/).
+- Docker Engine com Docker Compose v2 e permissão para executar `docker` sem
+  `sudo`.
+- Acesso à Internet.
+- Credenciais OAuth do Google Drive compartilhadas pelo mantenedor, para a
+  reprodução exata via DVC.
+
+Confirme os itens principais antes de continuar:
 
 ```bash
-uv sync --all-groups
-uv run pre-commit install
-set -a; source .env; set +a
-make pull-data
+git --version
+python3 --version
+uv --version
+docker compose version
 ```
 
-`make pull-data` recupera os ponteiros DVC do commit atual. Na primeira
-execução, o OAuth abre o navegador; a conta precisa ter acesso à pasta remota e
-estar autorizada no aplicativo OAuth. `make download-data` é uma alternativa de
-obtenção da fonte pública com `KAGGLE_API_TOKEN`; ele não substitui o estado
-versionado recuperado por DVC.
+## Execução Do Zero
 
-Em terminais separados, inicialize e execute a primeira promoção:
+### 1. Preparar a máquina
+
+Clone o projeto, instale as dependências bloqueadas no lockfile e crie seu
+arquivo local de ambiente. Nunca versione `.env` nem compartilhe suas
+credenciais.
 
 ```bash
-# Terminal 1: MLflow em http://localhost:5000
+git clone https://github.com/FernandoFailla/techchallenge-fase3.git
+cd techchallenge-fase3
+cp .env.example .env
+uv sync --all-groups
+uv run pre-commit install
+```
+
+Edite `.env` e preencha apenas `GDRIVE_CLIENT_ID` e `GDRIVE_CLIENT_SECRET` com
+as credenciais recebidas do mantenedor. Os campos `MLFLOW_*` podem permanecer
+com os valores de exemplo. Carregue as variáveis no terminal atual:
+
+```bash
+set -a
+source .env
+set +a
+```
+
+### 2. Recuperar os dados aprovados
+
+O DVC é o caminho reprodutível. Ele recupera a versão dos dados associada ao
+commit atual, incluindo a base de modelagem usada no treinamento.
+
+```bash
+make pull-data
+uv run dvc status
+```
+
+Na primeira execução, o DVC pode abrir o navegador para o OAuth. Autorize a
+conta que possui acesso à pasta Google Drive compartilhada e retorne ao
+terminal. O comando deve terminar sem arquivos modificados.
+
+`make download-data` é apenas uma alternativa para obter a fonte pública via
+`KAGGLE_API_TOKEN`. Ele não substitui `make pull-data` para reproduzir a base
+aprovada ou o modelo deste repositório.
+
+### 3. Criar o primeiro modelo champion
+
+Abra **dois terminais** no diretório do projeto. Mantenha os comandos abaixo em
+execução; `Ctrl+C` encerra o serviço daquele terminal.
+
+No terminal 1, inicie o MLflow:
+
+```bash
 make mlflow
+```
 
-# Terminal 2: Airflow em http://localhost:8080
+No terminal 2, inicie o Airflow:
+
+```bash
 make airflow
+```
 
-# Terminal 3, depois que o Airflow estiver saudável: senha local gerada
+Quando o Airflow estiver disponível, descubra a senha local gerada:
+
+```bash
 make airflow-password
 ```
 
-No Airflow, execute manualmente a DAG `training_pipeline` e aguarde as etapas
-`validate_modeling_base`, `train_and_evaluate`, `optimize_and_benchmark` e
-`register_and_promote`. Ela cria e verifica o bundle antes de atribuir o alias
-`champion`. Para reiniciar somente o estado local do Airflow, use
-`make airflow-reset`; esse comando remove seu volume.
+Abra `http://localhost:8080`, entre com o usuário `admin` e a senha exibida.
+Execute manualmente a DAG `training_pipeline` e aguarde as quatro tarefas:
 
-Depois de existir um `champion`, inicie a stack final:
+```text
+validate_modeling_base
+  -> train_and_evaluate
+  -> optimize_and_benchmark
+  -> register_and_promote
+```
+
+A última tarefa cria uma versão de `triage-urgency-classifier` e associa o
+alias `champion`. Você pode acompanhar runs, métricas e artefatos em
+`http://localhost:5000`.
+
+Também existe a DAG `prepare_modeling_base`, usada para materializar a base
+determinística a partir do CSV bruto. Ela escreve somente no ambiente local: não
+publica alterações no DVC, Google Drive ou Git.
+
+### 4. Iniciar a API e a observabilidade
+
+Depois que a DAG tiver promovido um `champion`, abra um terceiro terminal e
+inicie a stack completa:
 
 ```bash
-make docker-config
 make observability
+```
+
+Espere os serviços terminarem o startup e confirme que a API carregou o modelo:
+
+```bash
 curl --fail http://localhost:8000/health
 ```
 
-Endpoints locais: MLflow `:5000`, API `:8000`, Prometheus `:9090` e Grafana
-`:3000`. O primeiro acesso ao Grafana usa `admin`/`admin`; altere a senha local
-quando solicitado. `make observability-down` remove os containers e preserva os
-volumes. `make api-build` constrói somente a imagem e `make api-down` também
-derruba a stack de serving.
+Uma resposta de sucesso contém `status: "ok"` e a versão do modelo carregado.
+Se a API não iniciar, verifique primeiro se a DAG foi concluída e se o alias
+`champion` existe no MLflow. A API falha intencionalmente em vez de escolher um
+fallback.
 
-O modelo servido pode ser escolhido antes de subir a API com
-`MLFLOW_MODEL_URI`, por exemplo `models:/triage-urgency-classifier@champion` ou
-uma versão explícita. A API falha no startup se não conseguir carregar o modelo;
-não há fallback silencioso.
+### 5. Testar a API e o dashboard
 
-## Operação E Validação
+Faça uma chamada de contrato com um texto neutro de demonstração. Não envie
+dados pessoais, clínicos ou identificáveis.
 
 ```bash
-make check                 # Ruff, mypy e pytest via pre-commit
-make api-benchmark         # 20 warm-ups + 200 POSTs sequenciais locais
-uv run marimo edit notebooks/04_baseline_nlp.py
-uv run marimo edit notebooks/05_onnx_benchmark.py
-uv run marimo edit notebooks/07_http_api_benchmark.py
+curl --silent --show-error --fail \
+  --request POST http://localhost:8000/predict \
+  --header 'Content-Type: application/json' \
+  --data '{"text":"Sample input for an API contract check."}'
 ```
 
-O Prometheus coleta `/metrics` a cada 15 segundos. O dashboard provisionado
-`Observabilidade da API` exibe total de inferências, p95 e taxa 5xx, filtrando
-`/predict`. As métricas possuem somente `endpoint`, `method` e `status` como
-labels; texto submetido, identificadores e detalhes de exceção não são
-persistidos em logs, métricas ou MLflow.
+A resposta possui o formato abaixo; a classificação depende do modelo ativo:
 
-## Resultado Medido
+```json
+{
+  "classification": "normal|atencao|urgente",
+  "model_version": "<versao-registry>"
+}
+```
+
+Abra Grafana em `http://localhost:3000`. O login inicial é `admin` / `admin`;
+altere a senha local quando solicitado. O dashboard provisionado
+`Observabilidade da API` mostra total de inferências, latência p95 e taxa de
+erros 5xx. O Prometheus coleta `/metrics` a cada 15 segundos, portanto espere
+um intervalo de coleta após gerar tráfego.
+
+## Comandos Mais Úteis
+
+| Objetivo | Comando |
+|---|---|
+| Mostrar todos os comandos | `make help` |
+| Executar lint, formato, tipos e testes | `make check` |
+| Validar o Compose sem iniciar containers | `make docker-config` |
+| Iniciar somente MLflow | `make mlflow` |
+| Encerrar MLflow | `make mlflow-down` |
+| Iniciar Airflow | `make airflow` |
+| Mostrar senha do Airflow em execução | `make airflow-password` |
+| Encerrar Airflow | `make airflow-down` |
+| Apagar containers e volume local do Airflow | `make airflow-reset` |
+| Construir somente a imagem da API | `make api-build` |
+| Iniciar API, MLflow, Prometheus e Grafana | `make observability` |
+| Encerrar a stack de observabilidade | `make observability-down` |
+| Medir a API local | `make api-benchmark` |
+
+`make observability-down` remove containers, mas preserva os volumes de MLflow,
+Prometheus e Grafana. `make airflow-reset` é destrutivo apenas para o estado
+local do Airflow e exige que você execute as DAGs novamente.
+
+## Desenvolvimento E Validação
+
+Antes de abrir uma alteração, execute:
+
+```bash
+make check
+make docker-config
+```
+
+Os notebooks Marimo são exploratórios. Abra-os com `uv run marimo edit` e, ao
+final da edição, valide o arquivo:
+
+```bash
+uv run marimo edit notebooks/04_baseline_nlp.py
+uv run marimo check notebooks/04_baseline_nlp.py
+```
+
+O GitHub Actions também executa `make check` e constrói `Dockerfile.api` em todo
+push e pull request. Ele não baixa dados, treina ou promove modelos porque esses
+passos exigem credenciais e têm custo maior.
+
+## Troubleshooting
+
+| Sintoma | Verificação e ação |
+|---|---|
+| `make pull-data` pede credenciais | Confirme que `.env` foi carregado e que a conta OAuth tem acesso ao Drive compartilhado. |
+| A API não sobe | Abra MLflow, confirme o alias `champion` e execute novamente `make observability`. |
+| Airflow não aceita a senha | Obtenha a senha atual com `make airflow-password`; após `make airflow-reset`, uma nova senha é criada. |
+| A porta já está em uso | Encerre a stack correspondente com `make airflow-down` ou `make observability-down` e tente novamente. |
+| Containers precisam de detalhes | Use `docker compose -f compose.mlflow.yml logs` ou `docker compose -f compose.airflow.yml logs`. Nunca publique logs que contenham dados sensíveis. |
+| É necessário recomeçar o Airflow | Use `make airflow-reset`, suba-o novamente e reexecute a DAG. |
+
+## Resultados Medidos
 
 Snapshot executado nesta cópia em 23/08/2026, Linux x86_64 com `nproc=16`,
 dataset DVC `data/processed/modeling_base.parquet` (2.000 registros; ponteiro
 MD5 `023d3b5fe03abd10ddd21aa84f8baa00`). São medições locais de uma execução,
-não SLO, capacidade de produção nem garantia de repetição em outra máquina.
+não representam SLO, capacidade de produção ou garantia de repetição em outra
+máquina.
 
 | Etapa | Medição observada | Protocolo da execução |
 |---|---:|---|
@@ -120,30 +281,32 @@ não SLO, capacidade de produção nem garantia de repetição em outra máquina
 
 O benchmark HTTP registra somente agregados no experimento MLflow
 `kan-24-http-benchmark`. O benchmark ONNX atual mede médias, com 1 warm-up e 5
-repetições; portanto ainda não demonstra o protocolo de aceite planejado de 20
-warm-ups, 500 predições individuais, mediana e p95. Reexecute os notebooks ou a
-DAG na máquina de avaliação e registre o novo snapshot antes de alegar esse
-gate como atendido.
+repetições; portanto, ainda não comprova o protocolo planejado de 20 warm-ups,
+500 predições individuais, mediana e p95. Reexecute os benchmarks na máquina de
+avaliação antes de alegar esse gate como atendido.
 
-## Dados, Limitações E Decisão Cloud
+## Dados, Segurança E Limitações
 
 A fonte é [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage),
-atribuída a Alan Jafari, com 2.000 exemplos sintéticos em inglês e o target
-publicado `urgency` (`low`, `medium`, `high`). A API apenas apresenta esses
-rótulos como `normal`, `atencao` e `urgente`; não cria nem altera a taxonomia.
+atribuída a Alan Jafari, com 2.000 exemplos sintéticos em inglês e target
+publicado `urgency` (`low`, `medium`, `high`). A API apresenta esses rótulos como
+`normal`, `atencao` e `urgente`; não cria nem altera a taxonomia.
 
 Os metadados públicos consultados divergem entre CC BY 4.0 e CC BY-SA 4.0. Até
-uma licença inequívoca ser verificada no arquivo da versão usada, o projeto adota
-a interpretação mais restritiva, CC BY-SA 4.0, mantém a atribuição e não afirma
-uma licença definitiva. Consulte o [ADR de dados](docs/adr/0001-dominio-e-dataset.md)
-para fonte, gate e limites completos.
+a confirmação por um arquivo de licença inequívoco da versão usada, o projeto
+adota a interpretação mais restritiva, CC BY-SA 4.0, e mantém a atribuição.
 
-O corpus é sintético, pequeno e não representa validação clínica, segurança,
-generalização ou justiça entre populações. A stack local também não oferece
-autenticação, alta disponibilidade, escalabilidade comprovada, monitoramento de
-drift, retreino automático ou deploy em nuvem.
+- Não envie texto clínico, dados pessoais ou identificadores ao serviço.
+- A aplicação não persiste texto submetido em logs, métricas ou MLflow.
+- A stack local não inclui autenticação, autorização, alta disponibilidade,
+  escalabilidade comprovada, monitoramento de drift ou retreinamento automático.
+- O corpus é sintético e pequeno; métricas não demonstram validade clínica,
+  segurança, generalização ou justiça entre populações.
+
+## Documentação Complementar
 
 - [Decisão teórica de cloud](docs/decisao-cloud.md)
 - [Roteiro e checklist STAR](docs/roteiro-video-star.md)
+- [ADR de dados](docs/adr/0001-dominio-e-dataset.md)
 - [ADR de arquitetura](docs/adr/0002-arquitetura-do-mvp.md)
 - [Plano e gates do MVP](docs/plano-mvp.md)
