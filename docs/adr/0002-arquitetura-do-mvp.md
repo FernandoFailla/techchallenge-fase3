@@ -62,7 +62,7 @@ O Docker Compose incluira quatro servicos:
 - Prometheus
 - Grafana
 
-O MLflow usara SQLite como backend e um diretorio persistente como artifact store. O tracking server atuara como proxy dos artefatos para que Airflow e API usem URIs HTTP em vez de caminhos locais diferentes entre host e containers. O Airflow sera executado em modo standalone fora desse Compose para evitar banco, scheduler e webserver adicionais na stack demonstrada.
+O MLflow usara SQLite como backend e um diretorio persistente como artifact store. O tracking server atuara como proxy dos artefatos para que Airflow e API usem URIs HTTP em vez de caminhos locais diferentes entre host e containers. O Airflow sera executado em um container standalone fora desse Compose para evitar banco, scheduler e webserver adicionais na stack demonstrada.
 
 No primeiro bootstrap, somente o MLflow sera iniciado. A DAG criara e promovera a primeira versao; API, Prometheus e Grafana serao iniciados depois que `champion` puder ser resolvido. Reinicios posteriores reutilizarao os volumes persistentes.
 

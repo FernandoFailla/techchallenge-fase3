@@ -1,0 +1,7 @@
+FROM apache/airflow:3.3.1-python3.13
+
+COPY --chown=airflow:root pyproject.toml README.md /opt/techchallenge/
+COPY --chown=airflow:root src /opt/techchallenge/src
+
+USER airflow
+RUN pip install --no-cache-dir "apache-airflow==${AIRFLOW_VERSION}" /opt/techchallenge

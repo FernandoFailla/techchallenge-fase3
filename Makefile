@@ -3,16 +3,32 @@
 KAGGLE_DATASET := alanjafari/kurmed-triage/versions/1
 DATA_DIR := data/raw
 
-.PHONY: help check download-data pull-data
+.PHONY: help airflow airflow-down airflow-password airflow-reset check download-data pull-data
 
 help:
 	@printf "Available targets:\n"
+	@printf "  airflow        Start local Airflow standalone\n"
+	@printf "  airflow-down   Stop local Airflow standalone\n"
+	@printf "  airflow-password Show the generated local Airflow password\n"
+	@printf "  airflow-reset  Remove local Airflow state and containers\n"
 	@printf "  check          Run all repository quality checks\n"
 	@printf "  download-data  Download KurMed-Triage v1 to %s\n" "$(DATA_DIR)"
 	@printf "  pull-data      Download the DVC-tracked dataset\n"
 
 check:
 	@uv run pre-commit run --all-files
+
+airflow:
+	@AIRFLOW_UID="$$(id -u)" docker compose -f compose.airflow.yml up --build
+
+airflow-down:
+	@AIRFLOW_UID="$$(id -u)" docker compose -f compose.airflow.yml down
+
+airflow-password:
+	@AIRFLOW_UID="$$(id -u)" docker compose -f compose.airflow.yml exec airflow cat /opt/airflow/simple_auth_manager_passwords.json.generated
+
+airflow-reset:
+	@AIRFLOW_UID="$$(id -u)" docker compose -f compose.airflow.yml down --volumes --remove-orphans
 
 download-data:
 	@test -n "$$KAGGLE_API_TOKEN" || (printf "%s\n" "KAGGLE_API_TOKEN must be exported before running make download-data." >&2; exit 1)

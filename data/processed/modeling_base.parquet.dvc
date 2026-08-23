@@ -1,0 +1,5 @@
+outs:
+- md5: 023d3b5fe03abd10ddd21aa84f8baa00
+  size: 122967
+  hash: md5
+  path: modeling_base.parquet

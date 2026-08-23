@@ -1,0 +1,5 @@
+outs:
+- md5: feeb6674753086f7bbba5cafa7a8e32b
+  size: 4033
+  hash: md5
+  path: split_manifest.parquet
