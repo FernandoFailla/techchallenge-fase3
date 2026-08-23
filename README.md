@@ -35,6 +35,12 @@ Se uma alteração de configuração ou permissões deixar o ambiente local inco
 
 Para iniciar o MLflow Tracking local, use `make mlflow`. O servidor fica disponível em `http://localhost:5000` e persiste seu banco SQLite e artefatos em volume Docker.
 
+A DAG manual `training_pipeline` executa KAN-11, KAN-10 e KAN-13 uma única vez,
+na ordem de validação, treinamento, benchmark e registro. Inicie `make mlflow`
+antes de `make airflow`; o contêiner do Airflow usa `host.docker.internal:5000` por
+defeito, ou respeita `MLFLOW_TRACKING_URI`. Cada execução cria novos runs e uma nova
+versão no Model Registry; o alias `champion` só muda depois da verificação do bundle.
+
 ## Exploração
 
 Após recuperar os dados com `make pull-data`, execute:

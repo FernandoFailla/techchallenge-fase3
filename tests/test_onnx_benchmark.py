@@ -6,7 +6,7 @@ from pathlib import Path
 
 import polars as pl
 
-from techchallenge.baseline_nlp import BaselineNlpConfig
+from techchallenge.baseline_nlp import BaselineNlpConfig, BaselineSelection
 from techchallenge.onnx_benchmark import (
     OnnxBenchmarkConfig,
     run_and_log_onnx_benchmark,
@@ -104,6 +104,7 @@ def test_onnx_benchmark_has_test_class_parity_and_safe_mlflow_payloads(
         tracker=tracker,
     )
 
+    assert result.baseline_result is not None
     assert result.baseline_result.selected_model_name == "tfidf_random_forest"
     assert result.selected_ccp_alpha == 0.0
     assert not result.pruning_attempted
@@ -162,6 +163,36 @@ def test_onnx_benchmark_keeps_unpruned_model_when_fallback_cannot_meet_gate(
     assert result.selected_ccp_alpha == 0.0
     assert result.test_prediction_parity.parity_rate == 1.0
     assert [run["name"] for run in tracker.runs[-2:]] == [
+        "final_test_prediction_parity",
+        "final_onnx_benchmark",
+    ]
+
+
+def test_onnx_benchmark_uses_prior_aggregate_selection_without_retraining(
+    tmp_path: Path,
+) -> None:
+    tracker = CapturingMlflowClient()
+
+    result = run_and_log_onnx_benchmark(
+        _modeling_base(),
+        baseline_config=_baseline_config(),
+        benchmark_config=OnnxBenchmarkConfig(
+            benchmark_records=3,
+            warmup_rounds=0,
+            repetitions=1,
+            desired_speedup=0.0001,
+        ),
+        dvc_pointer_path=_dvc_pointer(tmp_path),
+        tracker=tracker,
+        prior_selection=BaselineSelection(
+            selected_model_name="tfidf_random_forest",
+            random_forest_validation_macro_f1=1.0,
+        ),
+    )
+
+    assert result.baseline_result is None
+    assert [run["name"] for run in tracker.runs] == [
+        "onnx_conversion_benchmark",
         "final_test_prediction_parity",
         "final_onnx_benchmark",
     ]

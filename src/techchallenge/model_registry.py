@@ -31,7 +31,9 @@ from techchallenge.baseline_nlp import (
     train_tfidf_random_forest,
 )
 from techchallenge.onnx_benchmark import (
+    OnnxBenchmarkApproval,
     OnnxBenchmarkConfig,
+    benchmark_approval,
     pipeline_components,
     run_and_log_onnx_benchmark,
     serialize_onnx_classifier,
@@ -137,23 +139,28 @@ def register_approved_onnx_model(
     dvc_pointer_path: Path,
     registry_config: RegistryConfig = RegistryConfig(),
     tracking_uri: str | None = None,
+    prior_approval: OnnxBenchmarkApproval | None = None,
 ) -> RegistryResult:
     """Reproduce KAN-10, register its bundle, then assign `champion` if verified."""
     resolved_tracking_uri = tracking_uri or get_tracking_uri()
-    benchmark_result = run_and_log_onnx_benchmark(
-        modeling_base,
-        baseline_config=baseline_config,
-        benchmark_config=benchmark_config,
-        dvc_pointer_path=dvc_pointer_path,
-        tracking_uri=resolved_tracking_uri,
-    )
+    approval = prior_approval
+    if approval is None:
+        approval = benchmark_approval(
+            run_and_log_onnx_benchmark(
+                modeling_base,
+                baseline_config=baseline_config,
+                benchmark_config=benchmark_config,
+                dvc_pointer_path=dvc_pointer_path,
+                tracking_uri=resolved_tracking_uri,
+            )
+        )
     _require_approved_kan10_result(
-        onnx_gate_met=benchmark_result.onnx_gate_met,
-        prediction_parity=benchmark_result.test_prediction_parity.parity_rate,
+        onnx_gate_met=approval.onnx_gate_met,
+        prediction_parity=approval.test_prediction_parity,
     )
 
     selected_config = replace(
-        baseline_config, random_forest_ccp_alpha=benchmark_result.selected_ccp_alpha
+        baseline_config, random_forest_ccp_alpha=approval.selected_ccp_alpha
     )
     splits = split_modeling_base(modeling_base)
     final_model = train_tfidf_random_forest(
@@ -202,10 +209,8 @@ def register_approved_onnx_model(
             )
             mlflow.log_metrics(
                 {
-                    "kan10.test_prediction_parity": (
-                        benchmark_result.test_prediction_parity.parity_rate
-                    ),
-                    "kan10.onnx_speedup": benchmark_result.final_benchmark.speedup,
+                    "kan10.test_prediction_parity": (approval.test_prediction_parity),
+                    "kan10.onnx_speedup": approval.final_speedup,
                     "bundle.components": float(len(_BUNDLE_ARTIFACTS)),
                 }
             )

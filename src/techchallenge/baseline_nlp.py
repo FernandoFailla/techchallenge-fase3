@@ -100,6 +100,14 @@ class ExperimentResult:
     final_test_result: EvaluationResult
 
 
+@dataclass(frozen=True)
+class BaselineSelection:
+    """Aggregate validation output safe to hand to a downstream orchestration task."""
+
+    selected_model_name: str
+    random_forest_validation_macro_f1: float
+
+
 def load_modeling_base(data_path: Path) -> pl.DataFrame:
     """Load only the columns required for training from the DVC-tracked Parquet."""
     lazy_frame = pl.scan_parquet(data_path)
@@ -333,6 +341,17 @@ def run_and_log_experiment(
         selected_model_name=selected_model_name,
         final_test_result=final_test_result,
     )
+
+
+def baseline_selection(result: ExperimentResult) -> BaselineSelection:
+    """Extract only the validation metadata required by the KAN-10 stage."""
+    for evaluation in result.validation_results:
+        if evaluation.model_name == "tfidf_random_forest":
+            return BaselineSelection(
+                selected_model_name=result.selected_model_name,
+                random_forest_validation_macro_f1=evaluation.metrics["macro_f1"],
+            )
+    raise ValueError("KAN-11 experiment did not evaluate the Random Forest candidate")
 
 
 def _validate_modeling_base(modeling_base: pl.DataFrame) -> None:

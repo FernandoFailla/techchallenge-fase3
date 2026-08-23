@@ -19,11 +19,13 @@ from sklearn.pipeline import Pipeline
 
 from techchallenge.baseline_nlp import (
     BaselineNlpConfig,
+    BaselineSelection,
     DataProvenance,
     EvaluationResult,
     ExperimentResult,
     ModelingSplits,
     SplitData,
+    baseline_selection,
     evaluate_classifier,
     read_dvc_provenance,
     run_and_log_experiment,
@@ -84,13 +86,23 @@ class PredictionParity:
 class OnnxBenchmarkResult:
     """Selection, parity, and final benchmark outcomes for KAN-10."""
 
-    baseline_result: ExperimentResult
+    baseline_result: ExperimentResult | None
     initial_benchmark: LatencyBenchmark
     final_benchmark: LatencyBenchmark
     selected_ccp_alpha: float
     pruning_attempted: bool
     onnx_gate_met: bool
     test_prediction_parity: PredictionParity
+
+
+@dataclass(frozen=True)
+class OnnxBenchmarkApproval:
+    """Aggregate KAN-10 outcome safe to pass to the registry stage."""
+
+    final_speedup: float
+    onnx_gate_met: bool
+    selected_ccp_alpha: float
+    test_prediction_parity: float
 
 
 @dataclass(frozen=True)
@@ -160,18 +172,23 @@ def run_and_log_onnx_benchmark(
     experiment_name: str = DEFAULT_EXPERIMENT_NAME_ONNX,
     tracking_uri: str | None = None,
     tracker: MlflowClient | None = None,
+    prior_selection: BaselineSelection | None = None,
 ) -> OnnxBenchmarkResult:
     """Select on validation and check final ONNX class parity on test only."""
     _validate_benchmark_config(benchmark_config)
-    baseline_result = run_and_log_experiment(
-        modeling_base,
-        config=baseline_config,
-        dvc_pointer_path=dvc_pointer_path,
-        experiment_name=experiment_name,
-        tracking_uri=tracking_uri,
-        tracker=tracker,
-    )
-    if baseline_result.selected_model_name != RANDOM_FOREST_MODEL_NAME:
+    baseline_result: ExperimentResult | None = None
+    selection = prior_selection
+    if selection is None:
+        baseline_result = run_and_log_experiment(
+            modeling_base,
+            config=baseline_config,
+            dvc_pointer_path=dvc_pointer_path,
+            experiment_name=experiment_name,
+            tracking_uri=tracking_uri,
+            tracker=tracker,
+        )
+        selection = baseline_selection(baseline_result)
+    if selection.selected_model_name != RANDOM_FOREST_MODEL_NAME:
         raise ValueError("KAN-11 did not select the Random Forest candidate")
 
     splits = split_modeling_base(modeling_base)
@@ -180,7 +197,6 @@ def run_and_log_onnx_benchmark(
     initial_benchmark = _benchmark_on_validation(
         initial_model, splits.validation, benchmark_config
     )
-    baseline_validation = _random_forest_validation(baseline_result)
     _log_benchmark_run(
         run_name="onnx_conversion_benchmark",
         phase="onnx_conversion_benchmark",
@@ -188,7 +204,7 @@ def run_and_log_onnx_benchmark(
         baseline_config=baseline_config,
         benchmark_config=benchmark_config,
         benchmark=initial_benchmark,
-        validation_evaluation=baseline_validation,
+        validation_macro_f1=selection.random_forest_validation_macro_f1,
         selected_ccp_alpha=baseline_config.random_forest_ccp_alpha,
         tracking_uri=tracking_uri,
         tracker=tracker,
@@ -203,7 +219,7 @@ def run_and_log_onnx_benchmark(
             splits=splits,
             baseline_config=baseline_config,
             benchmark_config=benchmark_config,
-            baseline_validation=baseline_validation,
+            baseline_validation_macro_f1=selection.random_forest_validation_macro_f1,
             provenance=provenance,
             tracking_uri=tracking_uri,
             tracker=tracker,
@@ -242,7 +258,7 @@ def run_and_log_onnx_benchmark(
         baseline_config=selected_config,
         benchmark_config=benchmark_config,
         benchmark=final_benchmark,
-        validation_evaluation=None,
+        validation_macro_f1=None,
         selected_ccp_alpha=selected_config.random_forest_ccp_alpha,
         tracking_uri=tracking_uri,
         tracker=tracker,
@@ -256,6 +272,16 @@ def run_and_log_onnx_benchmark(
         pruning_attempted=pruning_attempted,
         onnx_gate_met=onnx_gate_met,
         test_prediction_parity=test_prediction_parity,
+    )
+
+
+def benchmark_approval(result: OnnxBenchmarkResult) -> OnnxBenchmarkApproval:
+    """Extract only the gate results required by the KAN-13 stage."""
+    return OnnxBenchmarkApproval(
+        final_speedup=result.final_benchmark.speedup,
+        onnx_gate_met=result.onnx_gate_met,
+        selected_ccp_alpha=result.selected_ccp_alpha,
+        test_prediction_parity=result.test_prediction_parity.parity_rate,
     )
 
 
@@ -309,7 +335,7 @@ def _select_pruning_candidate(
     splits: ModelingSplits,
     baseline_config: BaselineNlpConfig,
     benchmark_config: OnnxBenchmarkConfig,
-    baseline_validation: EvaluationResult,
+    baseline_validation_macro_f1: float,
     provenance: DataProvenance,
     tracking_uri: str | None,
     tracker: MlflowClient | None,
@@ -336,14 +362,14 @@ def _select_pruning_candidate(
             baseline_config=candidate_config,
             benchmark_config=benchmark_config,
             benchmark=benchmark,
-            validation_evaluation=evaluation,
+            validation_macro_f1=evaluation.metrics["macro_f1"],
             selected_ccp_alpha=ccp_alpha,
             tracking_uri=tracking_uri,
             tracker=tracker,
             experiment_name=experiment_name,
         )
         if (
-            evaluation.metrics["macro_f1"] >= baseline_validation.metrics["macro_f1"]
+            evaluation.metrics["macro_f1"] >= baseline_validation_macro_f1
             and benchmark.speedup >= benchmark_config.desired_speedup
         ):
             acceptable_candidates.append(
@@ -358,13 +384,6 @@ def _select_pruning_candidate(
             -candidate.config.random_forest_ccp_alpha,
         ),
     )
-
-
-def _random_forest_validation(result: ExperimentResult) -> EvaluationResult:
-    for evaluation in result.validation_results:
-        if evaluation.model_name == RANDOM_FOREST_MODEL_NAME:
-            return evaluation
-    raise ValueError("KAN-11 experiment did not evaluate the Random Forest candidate")
 
 
 def _combine_train_and_validation(splits: ModelingSplits) -> SplitData:
@@ -431,7 +450,7 @@ def _log_benchmark_run(
     baseline_config: BaselineNlpConfig,
     benchmark_config: OnnxBenchmarkConfig,
     benchmark: LatencyBenchmark,
-    validation_evaluation: EvaluationResult | None,
+    validation_macro_f1: float | None,
     selected_ccp_alpha: float,
     tracking_uri: str | None,
     tracker: MlflowClient | None,
@@ -442,8 +461,8 @@ def _log_benchmark_run(
         "benchmark.onnx_mean_latency_ms": benchmark.onnx_mean_latency_ms,
         "benchmark.speedup": benchmark.speedup,
     }
-    if validation_evaluation is not None:
-        metrics["validation.macro_f1"] = validation_evaluation.metrics["macro_f1"]
+    if validation_macro_f1 is not None:
+        metrics["validation.macro_f1"] = validation_macro_f1
     artifact: dict[str, JsonValue] = {
         "benchmark": {
             "records": benchmark.records,
@@ -458,10 +477,9 @@ def _log_benchmark_run(
         },
         "privacy": _privacy_artifact(),
     }
-    if validation_evaluation is not None:
+    if validation_macro_f1 is not None:
         artifact["validation"] = {
-            "macro_f1": validation_evaluation.metrics["macro_f1"],
-            "records": validation_evaluation.records,
+            "macro_f1": validation_macro_f1,
         }
     log_aggregate_run(
         AggregateTrackingRun(
