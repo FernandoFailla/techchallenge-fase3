@@ -4619,6 +4619,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "altair" },
+    { name = "mlflow" },
     { name = "polars" },
     { name = "scikit-learn" },
 ]
@@ -4629,7 +4630,6 @@ dev = [
     { name = "dvc-gdrive" },
     { name = "kagglehub" },
     { name = "marimo" },
-    { name = "mlflow" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pyopenssl" },
@@ -4640,6 +4640,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "altair", specifier = ">=6.2.2" },
+    { name = "mlflow", specifier = ">=3.15.1" },
     { name = "polars", specifier = ">=1.43.2" },
     { name = "scikit-learn", specifier = ">=1.9.0" },
 ]
@@ -4650,7 +4651,6 @@ dev = [
     { name = "dvc-gdrive", specifier = ">=3.0.1" },
     { name = "kagglehub", specifier = ">=1.0.2" },
     { name = "marimo", specifier = ">=0.23.16" },
-    { name = "mlflow", specifier = ">=3.15.1" },
     { name = "mypy", specifier = ">=1.17.1" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pyopenssl", specifier = ">=24.2.1" },

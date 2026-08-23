@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "altair>=6.2.2",
+    "mlflow>=3.15.1",
     "polars>=1.43.2",
     "scikit-learn>=1.9.0",
 ]
@@ -16,7 +17,6 @@ dev = [
     "dvc-gdrive>=3.0.1",
     "kagglehub>=1.0.2",
     "marimo>=0.23.16",
-    "mlflow>=3.15.1",
     "mypy>=1.17.1",
     "pre-commit>=4.6.2",
     "pyopenssl>=24.2.1",
@@ -49,8 +49,12 @@ files = ["src", "tests"]
 [[tool.mypy.overrides]]
 module = [
     "sklearn.feature_extraction.text",
+    "sklearn.dummy",
+    "sklearn.ensemble",
+    "sklearn.metrics",
     "sklearn.model_selection",
     "sklearn.neighbors",
+    "sklearn.pipeline",
 ]
 ignore_missing_imports = true
 
