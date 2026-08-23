@@ -9,6 +9,9 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       PYTHONPATH: /opt/techchallenge/src
       TECHCHALLENGE_ROOT: /opt/techchallenge
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://host.docker.internal:5000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "python -c 'from urllib.request import urlopen; urlopen(\"http://localhost:8080/api/v2/monitor/health\")'"]
       interval: 30s
