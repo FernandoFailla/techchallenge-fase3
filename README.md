@@ -58,6 +58,22 @@ o carregamento do modelo e pode ser consultado sem enviar texto clínico:
 curl http://localhost:8000/health
 ```
 
+Com a API e o MLflow locais em execução, execute o benchmark HTTP sequencial com:
+
+```bash
+make api-benchmark
+```
+
+O benchmark usa `http://localhost:8000`, descarta 20 requisições de aquecimento e mede
+200 chamadas `POST /predict` sequenciais. A entrada é sintética e determinística, fica
+somente em memória e não é enviada ao MLflow. O experimento `kan-24-http-benchmark`
+registra a versão do modelo, parâmetros de execução e latências agregadas (média, P50 e
+P95). Para explorar o resultado em Marimo, com o contêiner já saudável, use:
+
+```bash
+uv run marimo edit notebooks/07_http_api_benchmark.py
+```
+
 O serviço `api` usa `MLFLOW_TRACKING_URI=http://mlflow:5000` internamente. Para
 selecionar outro modelo promovido, defina `MLFLOW_MODEL_URI` com uma URI de Registry
 determinística antes de `make api`, por exemplo
