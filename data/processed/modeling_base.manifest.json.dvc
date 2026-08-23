@@ -1,0 +1,5 @@
+outs:
+- md5: e4e8616c51fbe7a803e590f3af712064
+  size: 1121
+  hash: md5
+  path: modeling_base.manifest.json
