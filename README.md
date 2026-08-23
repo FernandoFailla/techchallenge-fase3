@@ -1,178 +1,149 @@
 # Tech Challenge - Fase 3
 
-Projeto da terceira fase da pós-graduação Machine Learning Engineering da Fiap.
+Protótipo educacional de NLP para classificar uma queixa textual em inglês como
+`normal`, `atencao` ou `urgente`. Ele demonstra rastreabilidade de dados e
+modelos, orquestração, API, observabilidade e otimização de inferência.
 
-O objetivo é aplicar NLP à classificação de urgência de baseado em queixa medicas, com o foco em demonstrar, o ciclo de vida completo de MLOps: validação de dados, treinamento, avaliação, otimização, registro, disponibilização por API, orquestração, CI/CD e monitoramento.
+> Não tem validade clínica. Não use para diagnóstico, atendimento ou decisão
+> médica real.
 
-> Este sistema não possui validade clínica. Não deve ser usado para diagnóstico, atendimento ou tomada de decisão médica real.
-
-## Estrutura inicial
+## Arquitetura
 
 ```text
-.
-├── docs/                 # Documentação, ADRs e glossário
-├── notebooks/            # Exploração e validação em Marimo
-├── src/techchallenge/    # Código-fonte reutilizável do projeto
-├── tests/                # Testes automatizados do código em src/
-├── AGENTS.md             # Regras permanentes de desenvolvimento
-└── pyproject.toml        # Metadados e configuração das ferramentas Python
+KurMed-Triage v1 (fonte pública)
+             |
+     DVC + Google Drive remoto
+             |
+ data/raw -> data/processed
+             |
+ Airflow manual: validar -> treinar -> ONNX -> registrar/promover
+             |                                  |
+             +------------------------------> MLflow + SQLite + artefatos
+                                                    |
+                              triage-urgency-classifier@champion
+                                                    |
+ FastAPI (/predict, /health, /metrics) <- Prometheus <- Grafana
 ```
 
-## Ambiente de desenvolvimento
+O Airflow é executado separadamente da stack de serving. A API é stateless,
+carrega uma única versão `champion` no startup e não troca modelo em runtime.
+O GitHub Actions executa `make check` e constrói a imagem da API em `push` e
+pull request.
 
-O projeto requer Python 3.13 e utiliza [uv](https://docs.astral.sh/uv/) para gerenciar dependências e executar comandos.
+## Bootstrap Local
+
+Requisitos: Docker Compose, Python 3.13, `uv` e acesso ao remote DVC
+compartilhado. Copie `.env.example` para `.env`, preencha somente as credenciais
+OAuth do Google Drive recebidas do mantenedor e não versione o arquivo.
 
 ```bash
 uv sync --all-groups
 uv run pre-commit install
-```
-
-Os hooks locais executam `ruff check`, `ruff format --check`, `mypy` e `pytest` antes de cada commit. Para executar a mesma validação manualmente em todo o repositório, use `make check`.
-
-## Integração contínua
-
-O GitHub Actions executa `uv sync --all-groups --frozen`, `make check` e o build da imagem da API a cada `push` e `pull request`. O workflow não recupera dados privados, não exige credenciais do Google Drive, não inicia MLflow nem serviços Docker.
-
-Para iniciar o Airflow local que materializa a base de modelagem, use `make airflow`. A DAG não publica dados no DVC; após revisar os artefatos gerados, a decisão de versioná-los é manual. Consulte a senha local gerada com `make airflow-password`.
-
-Se uma alteração de configuração ou permissões deixar o ambiente local inconsistente, execute `make airflow-reset` e inicie-o novamente. Esse comando remove apenas o estado local do Airflow.
-
-Para iniciar somente o MLflow Tracking no primeiro bootstrap, use `make mlflow`. O servidor fica disponível em `http://localhost:5000` e persiste seu banco SQLite e artefatos no volume Docker `mlflow-store`.
-
-## API de inferência
-
-A API FastAPI é executada em um contêiner não-root e não inclui dados, artefatos de
-modelo ou credenciais na imagem. Ela recupera o modelo pelo MLflow no startup, logo é
-necessário promover o alias `champion` antes de iniciá-la. O Compose mantém a API em um
-profile separado para permitir o bootstrap do MLflow e o treinamento inicial.
-
-```bash
-# Primeiro bootstrap: inicia somente o MLflow, executa a DAG e promove o champion.
-make mlflow
-make airflow
-
-# Depois que o champion existir, inicia API, MLflow, Prometheus e Grafana.
-make api
-```
-
-A API fica disponível em `http://localhost:8000`. O healthcheck só fica saudável após
-o carregamento do modelo e pode ser consultado sem enviar texto clínico:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Com a API e o MLflow locais em execução, execute o benchmark HTTP sequencial com:
-
-```bash
-make api-benchmark
-```
-
-O benchmark usa `http://localhost:8000`, descarta 20 requisições de aquecimento e mede
-200 chamadas `POST /predict` sequenciais. A entrada é sintética e determinística, fica
-somente em memória e não é enviada ao MLflow. O experimento `kan-24-http-benchmark`
-registra a versão do modelo, parâmetros de execução e latências agregadas (média, P50 e
-P95). Para explorar o resultado em Marimo, com o contêiner já saudável, use:
-
-```bash
-uv run marimo edit notebooks/07_http_api_benchmark.py
-```
-
-O serviço `api` usa `MLFLOW_TRACKING_URI=http://mlflow:5000` internamente. Para
-selecionar outro modelo promovido, defina `MLFLOW_MODEL_URI` com uma URI de Registry
-determinística antes de `make api`, por exemplo
-`models:/triage-urgency-classifier@champion` ou
-`models:/triage-urgency-classifier/3`. A imagem é construída com `uv.lock` e copia
-somente `pyproject.toml`, `uv.lock`, `README.md` e `src/`; `.dockerignore` exclui dados
-e arquivos de ambiente do contexto de build. Valide o Compose com `make docker-config`
-e construa apenas a imagem com `make api-build`.
-
-## Observabilidade
-
-Depois que existir um `champion`, `make observability` sobe a stack final: API,
-MLflow, Prometheus e Grafana. Os endpoints locais sao `http://localhost:5000`,
-`http://localhost:8000`, `http://localhost:9090` e `http://localhost:3000`.
-No primeiro acesso ao Grafana, use as credenciais locais padrao `admin`/`admin` e
-altere a senha quando solicitado.
-
-O Prometheus coleta `api:8000/metrics` a cada 15 segundos. O dashboard
-provisionado **Observabilidade da API** apresenta o total de requisicoes de
-inferencia, latencia p95 e taxa de respostas 5xx. As consultas filtram
-`endpoint="/predict"`, evitando que os scrapes de `/metrics` alterem os paineis.
-As metricas usam somente os labels de cardinalidade limitada `endpoint`, `method`
-e `status`; texto submetido, detalhes de excecao e identificadores nao sao labels
-nem sao persistidos.
-
-Use `make observability-down` para remover os containers sem apagar os volumes de
-MLflow, Prometheus ou Grafana. Use `make docker-config` antes de iniciar a stack
-para validar a configuracao do Compose.
-
-A DAG manual `training_pipeline` executa KAN-11, KAN-10 e KAN-13 uma única vez,
-na ordem de validação, treinamento, benchmark e registro. Inicie `make mlflow`
-antes de `make airflow`; o contêiner do Airflow usa `host.docker.internal:5000` por
-defeito, ou respeita `MLFLOW_TRACKING_URI`. Cada execução cria novos runs e uma nova
-versão no Model Registry; o alias `champion` só muda depois da verificação do bundle.
-
-## Exploração
-
-Após recuperar os dados com `make pull-data`, execute:
-
-```bash
-uv run marimo edit notebooks/02_exploratory_data_analysis.py
-```
-
-Para executar o baseline KAN-11, inicie o MLflow em outro terminal e abra o
-notebook. Ele registra apenas métricas e artefatos agregados; textos, IDs e o
-modelo treinado não são enviados ao tracking server.
-
-```bash
-make mlflow
-uv run marimo edit notebooks/04_baseline_nlp.py
-```
-
-Para executar o benchmark ONNX do KAN-10, mantenha o MLflow iniciado e abra o
-notebook abaixo. Ele seleciona o Random Forest pela validação do KAN-11, mede o
-fluxo completo de texto para classe com referências determinísticas da validação
-e usa o teste reservado apenas para a paridade de classes entre scikit-learn e
-ONNX Runtime. Pruning por `ccp_alpha` é um fallback de validação quando o gate
-de speedup não é atendido.
-
-```bash
-make mlflow
-uv run marimo edit notebooks/05_onnx_benchmark.py
-```
-
-O KAN-13 reproduz o fluxo aprovado do KAN-10 e registra o PyFunc local
-`triage-urgency-classifier`. O bundle contém o vetor TF-IDF serializado, o
-classificador ONNX e o mapa de classes para inferência; o MLflow registra apenas
-proveniência, métricas agregadas e hashes como metadados, sem expor vocabulário,
-textos clínicos, IDs ou segredos. O alias `champion` só é atribuído após baixar
-o bundle do Registry e validar todos os hashes.
-
-```bash
-make mlflow
-uv run marimo edit notebooks/06_mlflow_model_registry.py
-```
-
-## Dataset
-
-O protótipo utiliza o dataset público [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage). Seu uso está condicionado à validação de origem, licença, schema e qualidade definida no gate de dados.
-
-Ele foi escolhido para o MVP por disponibilizar 2.000 exemplos sintéticos em inglês, uma coluna textual (`patient_text_en`) e três níveis de urgência já publicados (`low`, `medium` e `high`). Isso permite demonstrar o pipeline de NLP e MLOps sem criar, traduzir ou agregar rótulos localmente.
-
-As bases sugeridas na ata foram o Medical Abstracts TC Corpus e recortes do MIMIC-III. O Medical Abstracts não foi adotado porque classifica especialidades, e não níveis de urgência. A ata não especifica um recorte ou target de urgência do MIMIC-III; por isso, para este MVP, foi priorizado o KurMed-Triage, que já publica três níveis de urgência diretamente compatíveis com o problema. A escolha não representa validade clínica: o dataset é sintético e permanece sujeito ao gate de dados e à verificação conservadora de licença.
-
-### Sincronizar dados versionados
-
-Após clonar o repositório, instale as dependências com `uv sync --all-groups`. Para acessar o dataset versionado, o mantenedor precisa compartilhar a pasta do Google Drive com sua conta e adicioná-la como usuária de teste do aplicativo OAuth do projeto.
-
-Receba `GDRIVE_CLIENT_ID` e `GDRIVE_CLIENT_SECRET` do mantenedor por canal seguro e preencha seu `.env` local. Não versione esse arquivo nem envie essas credenciais para canais públicos. Em seguida, execute:
-
-```bash
-set -a
-source .env
-set +a
+set -a; source .env; set +a
 make pull-data
 ```
 
-Na primeira execução, o navegador solicitará autorização para acessar a pasta compartilhada. Depois disso, basta executar `make pull-data` sempre que quiser recuperar a versão de dados associada ao commit atual.
+`make pull-data` recupera os ponteiros DVC do commit atual. Na primeira
+execução, o OAuth abre o navegador; a conta precisa ter acesso à pasta remota e
+estar autorizada no aplicativo OAuth. `make download-data` é uma alternativa de
+obtenção da fonte pública com `KAGGLE_API_TOKEN`; ele não substitui o estado
+versionado recuperado por DVC.
+
+Em terminais separados, inicialize e execute a primeira promoção:
+
+```bash
+# Terminal 1: MLflow em http://localhost:5000
+make mlflow
+
+# Terminal 2: Airflow em http://localhost:8080
+make airflow
+
+# Terminal 3, depois que o Airflow estiver saudável: senha local gerada
+make airflow-password
+```
+
+No Airflow, execute manualmente a DAG `training_pipeline` e aguarde as etapas
+`validate_modeling_base`, `train_and_evaluate`, `optimize_and_benchmark` e
+`register_and_promote`. Ela cria e verifica o bundle antes de atribuir o alias
+`champion`. Para reiniciar somente o estado local do Airflow, use
+`make airflow-reset`; esse comando remove seu volume.
+
+Depois de existir um `champion`, inicie a stack final:
+
+```bash
+make docker-config
+make observability
+curl --fail http://localhost:8000/health
+```
+
+Endpoints locais: MLflow `:5000`, API `:8000`, Prometheus `:9090` e Grafana
+`:3000`. O primeiro acesso ao Grafana usa `admin`/`admin`; altere a senha local
+quando solicitado. `make observability-down` remove os containers e preserva os
+volumes. `make api-build` constrói somente a imagem e `make api-down` também
+derruba a stack de serving.
+
+O modelo servido pode ser escolhido antes de subir a API com
+`MLFLOW_MODEL_URI`, por exemplo `models:/triage-urgency-classifier@champion` ou
+uma versão explícita. A API falha no startup se não conseguir carregar o modelo;
+não há fallback silencioso.
+
+## Operação E Validação
+
+```bash
+make check                 # Ruff, mypy e pytest via pre-commit
+make api-benchmark         # 20 warm-ups + 200 POSTs sequenciais locais
+uv run marimo edit notebooks/04_baseline_nlp.py
+uv run marimo edit notebooks/05_onnx_benchmark.py
+uv run marimo edit notebooks/07_http_api_benchmark.py
+```
+
+O Prometheus coleta `/metrics` a cada 15 segundos. O dashboard provisionado
+`Observabilidade da API` exibe total de inferências, p95 e taxa 5xx, filtrando
+`/predict`. As métricas possuem somente `endpoint`, `method` e `status` como
+labels; texto submetido, identificadores e detalhes de exceção não são
+persistidos em logs, métricas ou MLflow.
+
+## Resultado Medido
+
+Snapshot executado nesta cópia em 23/08/2026, Linux x86_64 com `nproc=16`,
+dataset DVC `data/processed/modeling_base.parquet` (2.000 registros; ponteiro
+MD5 `023d3b5fe03abd10ddd21aa84f8baa00`). São medições locais de uma execução,
+não SLO, capacidade de produção nem garantia de repetição em outra máquina.
+
+| Etapa | Medição observada | Protocolo da execução |
+|---|---:|---|
+| Baseline | Dummy Macro-F1 validação `0.187`; TF-IDF + Random Forest `0.678` | seleção na validação; Random Forest selecionado |
+| Teste reservado | Macro-F1 `0.758`; acurácia `0.756` | modelo selecionado, 299 registros de teste |
+| ONNX | scikit-learn `36.529 ms`; ONNX Runtime `0.417 ms`; `87.686x` | média por texto; 64 referências de validação, 1 warm-up e 5 repetições |
+| Paridade ONNX | `1.000` | 299 previsões do teste reservado iguais às do scikit-learn |
+| HTTP local | média `2.653 ms`; P50 `2.612 ms`; P95 `2.998 ms` | 20 warm-ups e 200 `POST /predict` sequenciais; API Docker; modelo MLflow versão `5` |
+
+O benchmark HTTP registra somente agregados no experimento MLflow
+`kan-24-http-benchmark`. O benchmark ONNX atual mede médias, com 1 warm-up e 5
+repetições; portanto ainda não demonstra o protocolo de aceite planejado de 20
+warm-ups, 500 predições individuais, mediana e p95. Reexecute os notebooks ou a
+DAG na máquina de avaliação e registre o novo snapshot antes de alegar esse
+gate como atendido.
+
+## Dados, Limitações E Decisão Cloud
+
+A fonte é [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage),
+atribuída a Alan Jafari, com 2.000 exemplos sintéticos em inglês e o target
+publicado `urgency` (`low`, `medium`, `high`). A API apenas apresenta esses
+rótulos como `normal`, `atencao` e `urgente`; não cria nem altera a taxonomia.
+
+Os metadados públicos consultados divergem entre CC BY 4.0 e CC BY-SA 4.0. Até
+uma licença inequívoca ser verificada no arquivo da versão usada, o projeto adota
+a interpretação mais restritiva, CC BY-SA 4.0, mantém a atribuição e não afirma
+uma licença definitiva. Consulte o [ADR de dados](docs/adr/0001-dominio-e-dataset.md)
+para fonte, gate e limites completos.
+
+O corpus é sintético, pequeno e não representa validação clínica, segurança,
+generalização ou justiça entre populações. A stack local também não oferece
+autenticação, alta disponibilidade, escalabilidade comprovada, monitoramento de
+drift, retreino automático ou deploy em nuvem.
+
+- [Decisão teórica de cloud](docs/decisao-cloud.md)
+- [Roteiro e checklist STAR](docs/roteiro-video-star.md)
+- [ADR de arquitetura](docs/adr/0002-arquitetura-do-mvp.md)
+- [Plano e gates do MVP](docs/plano-mvp.md)
