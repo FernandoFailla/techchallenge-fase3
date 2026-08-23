@@ -45,6 +45,7 @@ class BaselineNlpConfig:
     random_forest_estimators: int = 300
     random_forest_max_depth: int | None = None
     random_forest_n_jobs: int = -1
+    random_forest_ccp_alpha: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,7 @@ def train_tfidf_random_forest(
                     n_estimators=config.random_forest_estimators,
                     max_depth=config.random_forest_max_depth,
                     class_weight="balanced",
+                    ccp_alpha=config.random_forest_ccp_alpha,
                     n_jobs=config.random_forest_n_jobs,
                     random_state=config.random_state,
                 ),
