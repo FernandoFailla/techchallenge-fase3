@@ -43,6 +43,15 @@ Após recuperar os dados com `make pull-data`, execute:
 uv run marimo edit notebooks/02_exploratory_data_analysis.py
 ```
 
+Para executar o baseline KAN-11, inicie o MLflow em outro terminal e abra o
+notebook. Ele registra apenas métricas e artefatos agregados; textos, IDs e o
+modelo treinado não são enviados ao tracking server.
+
+```bash
+make mlflow
+uv run marimo edit notebooks/04_baseline_nlp.py
+```
+
 ## Dataset
 
 O protótipo utiliza o dataset público [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage). Seu uso está condicionado à validação de origem, licença, schema e qualidade definida no gate de dados.
