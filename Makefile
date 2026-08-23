@@ -3,7 +3,7 @@
 KAGGLE_DATASET := alanjafari/kurmed-triage/versions/1
 DATA_DIR := data/raw
 
-.PHONY: api api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data mlflow mlflow-down pull-data
+.PHONY: api api-benchmark api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data mlflow mlflow-down pull-data
 
 help:
 	@printf "Available targets:\n"
@@ -12,6 +12,7 @@ help:
 	@printf "  airflow-password Show the generated local Airflow password\n"
 	@printf "  airflow-reset  Remove local Airflow state and containers\n"
 	@printf "  api            Start API and MLflow after a champion model is promoted\n"
+	@printf "  api-benchmark  Benchmark the local API HTTP latency and log aggregates to MLflow\n"
 	@printf "  api-build      Build the API image\n"
 	@printf "  api-down       Stop the API and MLflow services\n"
 	@printf "  mlflow         Start local MLflow Tracking\n"
@@ -44,6 +45,9 @@ mlflow-down:
 
 api:
 	@docker compose -f compose.mlflow.yml --profile api up --build
+
+api-benchmark:
+	@uv run python -m techchallenge.http_benchmark
 
 api-build:
 	@docker compose -f compose.mlflow.yml --profile api build api
