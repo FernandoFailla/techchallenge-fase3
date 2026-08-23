@@ -52,6 +52,18 @@ make mlflow
 uv run marimo edit notebooks/04_baseline_nlp.py
 ```
 
+Para executar o benchmark ONNX do KAN-10, mantenha o MLflow iniciado e abra o
+notebook abaixo. Ele seleciona o Random Forest pela validação do KAN-11, mede o
+fluxo completo de texto para classe com referências determinísticas da validação
+e usa o teste reservado apenas para a paridade de classes entre scikit-learn e
+ONNX Runtime. Pruning por `ccp_alpha` é um fallback de validação quando o gate
+de speedup não é atendido.
+
+```bash
+make mlflow
+uv run marimo edit notebooks/05_onnx_benchmark.py
+```
+
 ## Dataset
 
 O protótipo utiliza o dataset público [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage). Seu uso está condicionado à validação de origem, licença, schema e qualidade definida no gate de dados.
