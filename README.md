@@ -33,6 +33,8 @@ Para iniciar o Airflow local que materializa a base de modelagem, use `make airf
 
 Se uma alteração de configuração ou permissões deixar o ambiente local inconsistente, execute `make airflow-reset` e inicie-o novamente. Esse comando remove apenas o estado local do Airflow.
 
+Para iniciar o MLflow Tracking local, use `make mlflow`. O servidor fica disponível em `http://localhost:5000` e persiste seu banco SQLite e artefatos em volume Docker.
+
 ## Exploração
 
 Após recuperar os dados com `make pull-data`, execute:
