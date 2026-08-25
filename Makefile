@@ -1,9 +1,14 @@
 .DEFAULT_GOAL := help
 
+-include .env
+export GDRIVE_CLIENT_ID GDRIVE_CLIENT_SECRET KAGGLE_API_TOKEN
+
 KAGGLE_DATASET := alanjafari/kurmed-triage/versions/1
 DATA_DIR := data/raw
+DVC_GDRIVE_TOKEN_DIR ?= $(HOME)/.local/state/techchallenge
+DVC_GDRIVE_TOKEN_FILE ?= $(DVC_GDRIVE_TOKEN_DIR)/gdrive-user-credentials.json
 
-.PHONY: api api-benchmark api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data mlflow mlflow-down observability observability-down pull-data
+.PHONY: api api-benchmark api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data dvc-reauth mlflow mlflow-down observability observability-down pull-data
 
 help:
 	@printf "Available targets:\n"
@@ -23,6 +28,7 @@ help:
 	@printf "  check          Run all repository quality checks\n"
 	@printf "  download-data  Download KurMed-Triage v1 to %s\n" "$(DATA_DIR)"
 	@printf "  pull-data      Download the DVC-tracked dataset\n"
+	@printf "  dvc-reauth     Remove this project's local Google OAuth token and pull data again\n"
 
 check:
 	@uv run pre-commit run --all-files
@@ -74,6 +80,12 @@ download-data:
 pull-data:
 	@test -n "$$GDRIVE_CLIENT_ID" || (printf "%s\n" "GDRIVE_CLIENT_ID must be exported before running make pull-data." >&2; exit 1)
 	@test -n "$$GDRIVE_CLIENT_SECRET" || (printf "%s\n" "GDRIVE_CLIENT_SECRET must be exported before running make pull-data." >&2; exit 1)
+	@mkdir -p "$(DVC_GDRIVE_TOKEN_DIR)"
 	@DVC_NO_ANALYTICS=true uv run dvc remote modify --local gdrive gdrive_client_id "$$GDRIVE_CLIENT_ID"
 	@DVC_NO_ANALYTICS=true uv run dvc remote modify --local gdrive gdrive_client_secret "$$GDRIVE_CLIENT_SECRET"
+	@DVC_NO_ANALYTICS=true uv run dvc remote modify --local gdrive gdrive_user_credentials_file "$(DVC_GDRIVE_TOKEN_FILE)"
 	@DVC_NO_ANALYTICS=true uv run dvc pull
+
+dvc-reauth:
+	@rm -f "$(DVC_GDRIVE_TOKEN_FILE)"
+	@$(MAKE) pull-data

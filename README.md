@@ -95,13 +95,43 @@ uv run pre-commit install
 
 Edite `.env` e preencha apenas `GDRIVE_CLIENT_ID` e `GDRIVE_CLIENT_SECRET` com
 as credenciais recebidas do mantenedor. Os campos `MLFLOW_*` podem permanecer
-com os valores de exemplo. Carregue as variáveis no terminal atual:
+com os valores de exemplo. Os comandos `make pull-data` e `make dvc-reauth`
+carregam `.env` automaticamente; nao e necessario exportar as variaveis antes de
+executa-los.
 
-```bash
-set -a
-source .env
-set +a
-```
+### Acesso ao Google Drive: responsabilidades
+
+O projeto usa duas camadas distintas de acesso. Não confunda uma com a outra:
+
+| Papel | Responsabilidade |
+|---|---|
+| Administrador | Mantém o projeto OAuth no Google Cloud, habilita a Google Drive API, fornece a configuração OAuth por canal privado e compartilha a pasta DVC com as contas autorizadas. |
+| Novo usuário | Insere a configuração OAuth localmente e autoriza **a própria conta Google** no navegador quando o DVC solicitar. |
+
+O novo usuário deve receber do administrador somente os valores de configuração
+`GDRIVE_CLIENT_ID` e `GDRIVE_CLIENT_SECRET`. Ele os adiciona ao seu `.env`,
+carrega o arquivo no terminal e executa `make pull-data`. Quando o navegador
+abrir, deve entrar com a conta Google que o administrador adicionou à pasta DVC
+e aceitar a autorização. O token gerado pertence àquela pessoa, fica no cache
+local do sistema e **nunca deve ser enviado a outra pessoa**.
+
+O administrador deve compartilhar a pasta Drive por e-mail ou grupo específico,
+nunca por acesso público de link. Para este repositório, conceda `Visualizador`
+ao usuário que só executará `make pull-data`; conceda `Editor` apenas a quem foi
+explicitamente autorizado a publicar dados com `dvc push`. O fluxo normal do MVP
+é somente leitura: DAGs e usuários não devem publicar no remote DVC.
+
+O administrador deve criar ou manter um cliente OAuth do tipo **Desktop app**,
+habilitar a Google Drive API e adicionar os novos usuários à tela de
+consentimento quando o aplicativo estiver em modo de teste. A configuração do
+cliente não autoriza acesso à pasta por si só: a autorização real depende da
+conta Google do usuário e das permissões concedidas a ela na pasta.
+
+Nunca versione `.env`, `.dvc/config.local` ou o cache de token OAuth. O projeto
+já ignora esses caminhos. Para remover o acesso de uma pessoa, remova-a do
+compartilhamento da pasta Drive; se for necessário invalidar todos os clientes,
+o administrador deve rotacionar o cliente OAuth no Google Cloud e distribuir a
+nova configuração por canal privado.
 
 ### 2. Recuperar os dados aprovados
 
@@ -226,6 +256,7 @@ um intervalo de coleta após gerar tráfego.
 | Iniciar API, MLflow, Prometheus e Grafana | `make observability` |
 | Encerrar a stack de observabilidade | `make observability-down` |
 | Medir a API local | `make api-benchmark` |
+| Refazer o login Google Drive e recuperar os dados | `make dvc-reauth` |
 
 `make observability-down` remove containers, mas preserva os volumes de MLflow,
 Prometheus e Grafana. `make airflow-reset` é destrutivo apenas para o estado
@@ -257,6 +288,7 @@ passos exigem credenciais e têm custo maior.
 | Sintoma | Verificação e ação |
 |---|---|
 | `make pull-data` pede credenciais | Confirme que `.env` foi carregado e que a conta OAuth tem acesso ao Drive compartilhado. |
+| `invalid_grant`, token expirado ou revogado | Execute `make dvc-reauth`, entre novamente com sua conta Google no navegador e conclua o consentimento. Esse comando remove somente o token OAuth local deste projeto; não apaga dados, volumes Docker nem arquivos do remote DVC. |
 | A API não sobe | Abra MLflow, confirme o alias `champion` e execute novamente `make observability`. |
 | Airflow não aceita a senha | Obtenha a senha atual com `make airflow-password`; após `make airflow-reset`, uma nova senha é criada. |
 | A porta já está em uso | Encerre a stack correspondente com `make airflow-down` ou `make observability-down` e tente novamente. |
