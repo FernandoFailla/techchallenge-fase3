@@ -168,6 +168,10 @@ No terminal 2, inicie o Airflow:
 make airflow
 ```
 
+O MLflow precisa estar em execução antes de disparar a DAG. O Airflow acessa o
+serviço do host por `http://host.docker.internal:5000` dentro do container; não
+defina `AIRFLOW_MLFLOW_TRACKING_URI` em `.env` na configuração local padrão.
+
 Quando o Airflow estiver disponível, descubra a senha local gerada:
 
 ```bash
