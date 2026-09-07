@@ -1,6 +1,6 @@
 # ADR 0001: Dominio e dataset
 
-- Status: Aceita com gate de validacao pendente
+- Status: Aceita com tratamento conservador de licenca
 - Data: 12/08/2026
 - Decisores: Fernando Failla
 
@@ -41,7 +41,9 @@ O dataset sera aceito somente se a versao analisada:
 - permitir um split sem vazamento conhecido;
 - tiver sua licenca e atribuicao documentadas.
 
-Enquanto a divergencia nao for resolvida por um arquivo de licenca inequivoco, o projeto obedecera a interpretacao mais restritiva, CC BY-SA 4.0, e atribuira o trabalho a Alan Jafari. A documentacao registrara a divergencia em vez de apresentar uma licenca como fato incontroverso.
+O projeto obedecera a interpretacao mais restritiva, CC BY-SA 4.0, e atribuira
+o trabalho a Alan Jafari. A documentacao registrara a divergencia em vez de
+apresentar uma licenca como fato incontroverso.
 
 Dados e artefatos finais serao rastreados com DVC. O primeiro remote sera um Google Drive compartilhado. Fonte original, versao e checksum permanecerao documentados para permitir recuperacao independente do remote.
 
@@ -106,7 +108,16 @@ Aceita apenas como contingencia. Se o KurMed falhar no gate, a substituicao deve
 - Arquivo observado no Hugging Face: `synthetic_v1.jsonl`
 - Autor informado: Alan Jafari
 - Versao informada: v1
+- Consulta em 07/09/2026 ao endpoint publico Kaggle v1: o campo de metadados
+  `licenseName` informa CC BY-SA 4.0; a descricao da mesma pagina informa CC BY
+  4.0 e o cartao do Hugging Face tambem informa CC BY 4.0.
+- O endpoint publico do Kaggle nao lista um arquivo de licenca separado para
+  essa versao.
 
-## Criterio para encerrar a pendencia
+## Criterio aplicado
 
-O status deixa de conter a ressalva de gate pendente quando o card de validacao registrar o arquivo efetivamente usado, seu checksum, schema, contagens, distribuicao, duplicatas e conclusao sobre a licenca aplicavel.
+O projeto usa somente a versao v1 recuperada do Kaggle, atribui Alan Jafari e
+aplica CC BY-SA 4.0 como politica operacional conservadora. Isso e suficiente
+para a demonstracao educacional e nao constitui parecer juridico. Uma licenca
+inequivoca publicada pelo autor deve substituir esta politica se o projeto for
+reutilizado fora do contexto do Tech Challenge.

@@ -104,9 +104,8 @@ def test_manual_registration_creates_a_new_version_and_preserves_prior_version(
         experiment_name="manual-rerun-experiment",
     )
     benchmark_config = OnnxBenchmarkConfig(
-        benchmark_records=3,
-        warmup_rounds=0,
-        repetitions=1,
+        warmup_predictions=0,
+        measured_predictions=3,
         desired_speedup=0.0001,
     )
 

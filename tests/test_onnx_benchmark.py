@@ -5,10 +5,14 @@ from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 import polars as pl
+import pytest
 
-from techchallenge.baseline_nlp import BaselineNlpConfig, BaselineSelection
+from techchallenge.baseline_nlp import BaselineNlpConfig, BaselineSelection, SplitData
 from techchallenge.onnx_benchmark import (
     OnnxBenchmarkConfig,
+    _deterministic_references,
+    _measure_individual_prediction_latencies,
+    _percentile,
     run_and_log_onnx_benchmark,
 )
 
@@ -85,6 +89,46 @@ def _baseline_config() -> BaselineNlpConfig:
     )
 
 
+def test_onnx_benchmark_default_acceptance_protocol() -> None:
+    config = OnnxBenchmarkConfig()
+
+    assert config.warmup_predictions == 20
+    assert config.measured_predictions == 500
+
+
+def test_onnx_benchmark_repeats_deterministic_validation_references() -> None:
+    references = _deterministic_references(
+        SplitData(texts=("first", "second"), targets=("low", "high")), 5
+    )
+
+    assert references == ("first", "first", "first", "second", "second")
+
+
+def test_onnx_benchmark_measures_each_prediction_and_aggregates_percentiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timestamps = iter((0, 1_000_000, 10, 3_000_010, 20, 2_000_020))
+    prediction_calls = 0
+
+    def predict_one(_: str) -> str:
+        nonlocal prediction_calls
+        prediction_calls += 1
+        return "label"
+
+    monkeypatch.setattr(
+        "techchallenge.onnx_benchmark.perf_counter_ns", lambda: next(timestamps)
+    )
+
+    latencies = _measure_individual_prediction_latencies(
+        predict_one, ("first", "second", "third")
+    )
+
+    assert prediction_calls == 3
+    assert latencies == pytest.approx((1.0, 3.0, 2.0))
+    assert _percentile(latencies, 0.50) == pytest.approx(2.0)
+    assert _percentile(latencies, 0.95) == pytest.approx(3.0)
+
+
 def test_onnx_benchmark_has_test_class_parity_and_safe_mlflow_payloads(
     tmp_path: Path,
 ) -> None:
@@ -94,9 +138,8 @@ def test_onnx_benchmark_has_test_class_parity_and_safe_mlflow_payloads(
         _modeling_base(),
         baseline_config=_baseline_config(),
         benchmark_config=OnnxBenchmarkConfig(
-            benchmark_records=3,
-            warmup_rounds=0,
-            repetitions=1,
+            warmup_predictions=0,
+            measured_predictions=3,
             desired_speedup=0.0001,
         ),
         dvc_pointer_path=_dvc_pointer(tmp_path),
@@ -111,10 +154,14 @@ def test_onnx_benchmark_has_test_class_parity_and_safe_mlflow_payloads(
     assert result.onnx_gate_met
     assert result.test_prediction_parity.records == 9
     assert result.test_prediction_parity.parity_rate == 1.0
-    assert result.final_benchmark.records == 3
-    assert result.final_benchmark.repetitions == 1
+    assert result.final_benchmark.warmup_predictions == 0
+    assert result.final_benchmark.measured_predictions == 3
     assert result.final_benchmark.sklearn_mean_latency_ms > 0
+    assert result.final_benchmark.sklearn_p50_latency_ms > 0
+    assert result.final_benchmark.sklearn_p95_latency_ms > 0
     assert result.final_benchmark.onnx_mean_latency_ms > 0
+    assert result.final_benchmark.onnx_p50_latency_ms > 0
+    assert result.final_benchmark.onnx_p95_latency_ms > 0
     assert [run["name"] for run in tracker.runs] == [
         "validation_selection-dummy_majority",
         "validation_selection-tfidf_random_forest",
@@ -124,19 +171,52 @@ def test_onnx_benchmark_has_test_class_parity_and_safe_mlflow_payloads(
         "final_onnx_benchmark",
     ]
     assert tracker.experiment_names == ["kan-10-onnx-benchmark"] * 6
+    final_metrics = tracker.runs[-1]["metrics"]
+    assert isinstance(final_metrics, dict)
+    assert {
+        "benchmark.sklearn_mean_latency_ms",
+        "benchmark.sklearn_p50_latency_ms",
+        "benchmark.sklearn_p95_latency_ms",
+        "benchmark.onnx_mean_latency_ms",
+        "benchmark.onnx_p50_latency_ms",
+        "benchmark.onnx_p95_latency_ms",
+        "benchmark.measured_predictions",
+        "benchmark.speedup",
+    }.issubset(final_metrics)
+    final_artifact = tracker.runs[-1]["artifact"]
+    assert isinstance(final_artifact, dict)
+    assert final_artifact["benchmark"] == {
+        "warmup_predictions": 0,
+        "measured_predictions": 3,
+        "sklearn_mean_latency_ms": result.final_benchmark.sklearn_mean_latency_ms,
+        "sklearn_p50_latency_ms": result.final_benchmark.sklearn_p50_latency_ms,
+        "sklearn_p95_latency_ms": result.final_benchmark.sklearn_p95_latency_ms,
+        "onnx_mean_latency_ms": result.final_benchmark.onnx_mean_latency_ms,
+        "onnx_p50_latency_ms": result.final_benchmark.onnx_p50_latency_ms,
+        "onnx_p95_latency_ms": result.final_benchmark.onnx_p95_latency_ms,
+        "speedup": result.final_benchmark.speedup,
+    }
 
     for run in tracker.runs:
         artifact = run["artifact"]
         assert isinstance(artifact, dict)
-        assert artifact["privacy"] == {
+        privacy = artifact["privacy"]
+        assert isinstance(privacy, dict)
+        assert {
             "contains_model_artifact": False,
             "contains_record_identifiers": False,
             "contains_text": False,
-        }
+        }.items() <= privacy.items()
         serialized_artifact = json.dumps(artifact)
         assert "critical indicator" not in serialized_artifact
         assert "stable indicator" not in serialized_artifact
         assert "monitor indicator" not in serialized_artifact
+    for run in tracker.runs[-3:]:
+        artifact = run["artifact"]
+        assert isinstance(artifact, dict)
+        privacy = artifact["privacy"]
+        assert isinstance(privacy, dict)
+        assert privacy["contains_predictions"] is False
 
 
 def test_onnx_benchmark_keeps_unpruned_model_when_fallback_cannot_meet_gate(
@@ -148,9 +228,8 @@ def test_onnx_benchmark_keeps_unpruned_model_when_fallback_cannot_meet_gate(
         _modeling_base(),
         baseline_config=_baseline_config(),
         benchmark_config=OnnxBenchmarkConfig(
-            benchmark_records=2,
-            warmup_rounds=0,
-            repetitions=1,
+            warmup_predictions=0,
+            measured_predictions=2,
             desired_speedup=1_000_000.0,
             pruning_ccp_alphas=(),
         ),
@@ -177,9 +256,8 @@ def test_onnx_benchmark_uses_prior_aggregate_selection_without_retraining(
         _modeling_base(),
         baseline_config=_baseline_config(),
         benchmark_config=OnnxBenchmarkConfig(
-            benchmark_records=3,
-            warmup_rounds=0,
-            repetitions=1,
+            warmup_predictions=0,
+            measured_predictions=3,
             desired_speedup=0.0001,
         ),
         dvc_pointer_path=_dvc_pointer(tmp_path),

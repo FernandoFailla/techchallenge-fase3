@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
+from math import ceil
 from pathlib import Path
-from statistics import fmean
+from statistics import fmean, median
 from time import perf_counter_ns
 from typing import Callable, Final, cast
 
@@ -47,21 +48,24 @@ RANDOM_FOREST_MODEL_NAME: Final = "tfidf_random_forest"
 class OnnxBenchmarkConfig:
     """Parameters for deterministic, in-process benchmark measurements."""
 
-    benchmark_records: int = 64
-    warmup_rounds: int = 1
-    repetitions: int = 5
+    warmup_predictions: int = 20
+    measured_predictions: int = 500
     desired_speedup: float = 1.0
     pruning_ccp_alphas: tuple[float, ...] = (0.0001, 0.001, 0.01)
 
 
 @dataclass(frozen=True)
 class LatencyBenchmark:
-    """Aggregate per-text latency for equivalent sklearn and ONNX flows."""
+    """Aggregate individual-prediction latency for equivalent inference flows."""
 
-    records: int
-    repetitions: int
+    warmup_predictions: int
+    measured_predictions: int
     sklearn_mean_latency_ms: float
+    sklearn_p50_latency_ms: float
+    sklearn_p95_latency_ms: float
     onnx_mean_latency_ms: float
+    onnx_p50_latency_ms: float
+    onnx_p95_latency_ms: float
 
     @property
     def speedup(self) -> float:
@@ -309,24 +313,27 @@ def _benchmark_on_validation(
     *,
     onnx_model: OnnxTextClassifier | None = None,
 ) -> LatencyBenchmark:
-    references = _deterministic_references(validation_data, config.benchmark_records)
+    references = _deterministic_references(validation_data, config.measured_predictions)
     runtime_model = (
         onnx_model if onnx_model is not None else OnnxTextClassifier(sklearn_model)
     )
-    _warm_up(sklearn_model, runtime_model, references, config.warmup_rounds)
-    sklearn_latencies = _measure_per_text_latency(
+    _warm_up(sklearn_model, runtime_model, references, config.warmup_predictions)
+    sklearn_latencies = _measure_individual_prediction_latencies(
         lambda text: str(sklearn_model.predict((text,))[0]),
         references,
-        config.repetitions,
     )
-    onnx_latencies = _measure_per_text_latency(
-        runtime_model.predict_one, references, config.repetitions
+    onnx_latencies = _measure_individual_prediction_latencies(
+        runtime_model.predict_one, references
     )
     return LatencyBenchmark(
-        records=len(references),
-        repetitions=config.repetitions,
+        warmup_predictions=config.warmup_predictions,
+        measured_predictions=len(references),
         sklearn_mean_latency_ms=fmean(sklearn_latencies),
+        sklearn_p50_latency_ms=median(sklearn_latencies),
+        sklearn_p95_latency_ms=_percentile(sklearn_latencies, 0.95),
         onnx_mean_latency_ms=fmean(onnx_latencies),
+        onnx_p50_latency_ms=median(onnx_latencies),
+        onnx_p95_latency_ms=_percentile(onnx_latencies, 0.95),
     )
 
 
@@ -394,11 +401,13 @@ def _combine_train_and_validation(splits: ModelingSplits) -> SplitData:
 
 
 def _deterministic_references(
-    data: SplitData, requested_records: int
+    data: SplitData, requested_predictions: int
 ) -> tuple[str, ...]:
-    records = min(data.records, requested_records)
+    if data.records == 0:
+        raise ValueError("Benchmark data must contain at least one record")
     return tuple(
-        data.texts[index * data.records // records] for index in range(records)
+        data.texts[index * data.records // requested_predictions]
+        for index in range(requested_predictions)
     )
 
 
@@ -406,36 +415,37 @@ def _warm_up(
     sklearn_model: Pipeline,
     onnx_model: OnnxTextClassifier,
     references: tuple[str, ...],
-    warmup_rounds: int,
+    warmup_predictions: int,
 ) -> None:
-    for _ in range(warmup_rounds):
-        for text in references:
-            sklearn_model.predict((text,))
-            onnx_model.predict_one(text)
+    for index in range(warmup_predictions):
+        text = references[index % len(references)]
+        sklearn_model.predict((text,))
+        onnx_model.predict_one(text)
 
 
-def _measure_per_text_latency(
+def _measure_individual_prediction_latencies(
     predict_one: Callable[[str], str],
     references: tuple[str, ...],
-    repetitions: int,
 ) -> tuple[float, ...]:
-    latencies: list[float] = []
-    for _ in range(repetitions):
-        started_at = perf_counter_ns()
-        for text in references:
-            predict_one(text)
-        elapsed_ns = perf_counter_ns() - started_at
-        latencies.append(elapsed_ns / len(references) / 1_000_000)
-    return tuple(latencies)
+    return tuple(_measure_prediction_latency(predict_one, text) for text in references)
+
+
+def _measure_prediction_latency(predict_one: Callable[[str], str], text: str) -> float:
+    started_at = perf_counter_ns()
+    predict_one(text)
+    return (perf_counter_ns() - started_at) / 1_000_000
+
+
+def _percentile(values: tuple[float, ...], percentile: float) -> float:
+    index = ceil(len(values) * percentile) - 1
+    return sorted(values)[index]
 
 
 def _validate_benchmark_config(config: OnnxBenchmarkConfig) -> None:
-    if config.benchmark_records < 1:
-        raise ValueError("benchmark_records must be at least one")
-    if config.warmup_rounds < 0:
-        raise ValueError("warmup_rounds cannot be negative")
-    if config.repetitions < 1:
-        raise ValueError("repetitions must be at least one")
+    if config.warmup_predictions < 0:
+        raise ValueError("warmup_predictions cannot be negative")
+    if config.measured_predictions < 1:
+        raise ValueError("measured_predictions must be at least one")
     if config.desired_speedup <= 0:
         raise ValueError("desired_speedup must be positive")
     if any(alpha <= 0 for alpha in config.pruning_ccp_alphas):
@@ -458,17 +468,26 @@ def _log_benchmark_run(
 ) -> None:
     metrics = {
         "benchmark.sklearn_mean_latency_ms": benchmark.sklearn_mean_latency_ms,
+        "benchmark.sklearn_p50_latency_ms": benchmark.sklearn_p50_latency_ms,
+        "benchmark.sklearn_p95_latency_ms": benchmark.sklearn_p95_latency_ms,
         "benchmark.onnx_mean_latency_ms": benchmark.onnx_mean_latency_ms,
+        "benchmark.onnx_p50_latency_ms": benchmark.onnx_p50_latency_ms,
+        "benchmark.onnx_p95_latency_ms": benchmark.onnx_p95_latency_ms,
+        "benchmark.measured_predictions": float(benchmark.measured_predictions),
         "benchmark.speedup": benchmark.speedup,
     }
     if validation_macro_f1 is not None:
         metrics["validation.macro_f1"] = validation_macro_f1
     artifact: dict[str, JsonValue] = {
         "benchmark": {
-            "records": benchmark.records,
-            "repetitions": benchmark.repetitions,
+            "warmup_predictions": benchmark.warmup_predictions,
+            "measured_predictions": benchmark.measured_predictions,
             "sklearn_mean_latency_ms": benchmark.sklearn_mean_latency_ms,
+            "sklearn_p50_latency_ms": benchmark.sklearn_p50_latency_ms,
+            "sklearn_p95_latency_ms": benchmark.sklearn_p95_latency_ms,
             "onnx_mean_latency_ms": benchmark.onnx_mean_latency_ms,
+            "onnx_p50_latency_ms": benchmark.onnx_p50_latency_ms,
+            "onnx_p95_latency_ms": benchmark.onnx_p95_latency_ms,
             "speedup": benchmark.speedup,
         },
         "data_provenance": {
@@ -572,4 +591,5 @@ def _privacy_artifact() -> dict[str, JsonValue]:
         "contains_model_artifact": False,
         "contains_record_identifiers": False,
         "contains_text": False,
+        "contains_predictions": False,
     }
