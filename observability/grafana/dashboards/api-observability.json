@@ -112,6 +112,7 @@
         "y": 0
       },
       "id": 3,
+      "description": "Exibe 0% quando nao houve respostas 5xx no intervalo selecionado.",
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -129,7 +130,7 @@
       "pluginVersion": "12.1.0",
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{job=\"api\",endpoint=\"/predict\",status=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_requests_total{job=\"api\",endpoint=\"/predict\"}[$__rate_interval])), 0.000001)",
+          "expr": "(sum(rate(http_requests_total{job=\"api\",endpoint=\"/predict\",status=~\"5..\"}[$__rate_interval])) or vector(0)) / clamp_min((sum(rate(http_requests_total{job=\"api\",endpoint=\"/predict\"}[$__rate_interval])) or vector(0)), 0.000001)",
           "legendFormat": "",
           "refId": "A"
         }
