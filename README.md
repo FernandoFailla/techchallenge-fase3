@@ -287,6 +287,27 @@ O GitHub Actions também executa `make check` e constrói `Dockerfile.api` em to
 push e pull request. Ele não baixa dados, treina ou promove modelos porque esses
 passos exigem credenciais e têm custo maior.
 
+### Gerar tráfego para o Grafana
+
+Com `make observability` em execução, gere tráfego concorrente e sintético para
+preencher os painéis de inferência:
+
+```bash
+make api-load-test
+```
+
+O padrão envia 500 requisições concorrentes, com 20 workers, para
+`http://localhost:8000`. Para aumentar ou reduzir a carga sem alterar arquivos:
+
+```bash
+API_LOAD_TEST_REQUESTS=2000 API_LOAD_TEST_CONCURRENCY=50 make api-load-test
+```
+
+Os payloads variam entre requisições, mas são textos sintéticos e não clínicos.
+O comando descarta respostas, não registra os textos nem detalhes de erros e não
+avalia qualidade do modelo. Aguarde até 15 segundos após o término para o
+Prometheus coletar as métricas e atualizar o dashboard Grafana.
+
 ## Troubleshooting
 
 | Sintoma | Verificação e ação |

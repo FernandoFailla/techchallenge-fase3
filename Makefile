@@ -8,7 +8,7 @@ DATA_DIR := data/raw
 DVC_GDRIVE_TOKEN_DIR ?= $(HOME)/.local/state/techchallenge
 DVC_GDRIVE_TOKEN_FILE ?= $(DVC_GDRIVE_TOKEN_DIR)/gdrive-user-credentials.json
 
-.PHONY: api api-benchmark api-build api-down airflow airflow-down airflow-password airflow-reset check docker-config download-data dvc-reauth mlflow mlflow-down observability observability-down pull-data
+.PHONY: api api-benchmark api-build api-down api-load-test airflow airflow-down airflow-password airflow-reset check docker-config download-data dvc-reauth mlflow mlflow-down observability observability-down pull-data
 
 help:
 	@printf "Available targets:\n"
@@ -18,6 +18,7 @@ help:
 	@printf "  airflow-reset  Remove local Airflow state and containers\n"
 	@printf "  api            Start the complete observability stack after a champion model is promoted\n"
 	@printf "  api-benchmark  Benchmark the local API HTTP latency and log aggregates to MLflow\n"
+	@printf "  api-load-test  Generate synthetic concurrent traffic for Grafana and Prometheus\n"
 	@printf "  api-build      Build the API image\n"
 	@printf "  api-down       Stop the complete observability stack\n"
 	@printf "  mlflow         Start only local MLflow Tracking for the first bootstrap\n"
@@ -56,6 +57,9 @@ api:
 
 api-benchmark:
 	@uv run python -m techchallenge.http_benchmark
+
+api-load-test:
+	@uv run python -m techchallenge.api_load_test
 
 api-build:
 	@docker compose -f compose.mlflow.yml build api
