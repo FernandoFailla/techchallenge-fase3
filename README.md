@@ -332,14 +332,15 @@ máquina.
 |---|---:|---|
 | Baseline | Dummy Macro-F1 validação `0.187`; TF-IDF + Random Forest `0.678` | seleção na validação; Random Forest selecionado |
 | Teste reservado | Macro-F1 `0.758`; acurácia `0.756` | modelo selecionado, 299 registros de teste |
-| ONNX | scikit-learn `36.529 ms`; ONNX Runtime `0.417 ms`; `87.686x` | média por texto; 64 referências de validação, 1 warm-up e 5 repetições |
+| ONNX | scikit-learn `36.529 ms`; ONNX Runtime `0.417 ms`; `87.686x` | snapshot histórico: média por texto; 64 referências de validação, 1 warm-up e 5 repetições |
 | Paridade ONNX | `1.000` | 299 previsões do teste reservado iguais às do scikit-learn |
 | HTTP local | média `2.653 ms`; P50 `2.612 ms`; P95 `2.998 ms` | 20 warm-ups e 200 `POST /predict` sequenciais; API Docker; modelo MLflow versão `5` |
 
 O benchmark HTTP registra somente agregados no experimento MLflow
-`kan-24-http-benchmark`. O benchmark ONNX atual mede médias, com 1 warm-up e 5
-repetições; portanto, ainda não comprova o protocolo planejado de 20 warm-ups,
-500 predições individuais, mediana e p95. Reexecute os benchmarks na máquina de
+`kan-24-http-benchmark`. O protocolo ONNX vigente executa 20 warm-ups e 500
+predições individuais determinísticas, registrando média, P50 e P95 agregados
+para scikit-learn e ONNX Runtime, sem persistir textos nem predições. O snapshot
+histórico acima não atende a esse protocolo; reexecute o benchmark na máquina de
 avaliação antes de alegar esse gate como atendido.
 
 ## Dados, Segurança E Limitações
