@@ -9,6 +9,7 @@ import pytest
 
 from techchallenge.baseline_nlp import (
     BaselineNlpConfig,
+    evaluate_predictions,
     load_modeling_base,
     read_dvc_provenance,
     run_and_log_experiment,
@@ -108,6 +109,31 @@ def test_read_dvc_provenance_reads_only_valid_output_hash(tmp_path: Path) -> Non
 
     assert provenance.pointer_path.endswith("modeling_base.parquet.dvc")
     assert provenance.md5 == "0123456789abcdef0123456789abcdef"
+
+
+def test_evaluate_predictions_rejects_an_unaligned_prediction_set() -> None:
+    with pytest.raises(ValueError, match="Prediction count"):
+        evaluate_predictions(
+            ("high",),
+            (),
+            labels=("high", "low"),
+            model_name="champion",
+            split_name="test",
+        )
+
+
+def test_evaluate_predictions_returns_aggregate_metrics() -> None:
+    result = evaluate_predictions(
+        ("high", "low", "low"),
+        ("high", "high", "low"),
+        labels=("high", "low"),
+        model_name="champion",
+        split_name="test",
+    )
+
+    assert result.records == 3
+    assert result.metrics["accuracy"] == pytest.approx(2 / 3)
+    assert result.confusion_matrix == ((1, 0), (1, 1))
 
 
 def test_experiment_logs_safe_aggregate_payloads_and_reserves_test(

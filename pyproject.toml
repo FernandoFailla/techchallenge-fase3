@@ -27,6 +27,7 @@ dev = [
     "pyopenssl>=24.2.1",
     "pytest>=8.4.1",
     "ruff>=0.12.8",
+    "shap>=0.52.0",
 ]
 
 [build-system]

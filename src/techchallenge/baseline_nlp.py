@@ -223,12 +223,32 @@ def evaluate_classifier(
     predictions = tuple(
         str(prediction) for prediction in classifier.predict(data.texts)
     )
-    matrix = confusion_matrix(data.targets, predictions, labels=labels)
+    return evaluate_predictions(
+        data.targets,
+        predictions,
+        labels=labels,
+        model_name=model_name,
+        split_name=split_name,
+    )
+
+
+def evaluate_predictions(
+    targets: tuple[str, ...],
+    predictions: tuple[str, ...],
+    *,
+    labels: tuple[str, ...],
+    model_name: str,
+    split_name: str,
+) -> EvaluationResult:
+    """Calculate aggregate metrics for already-produced in-memory predictions."""
+    if len(targets) != len(predictions):
+        raise ValueError("Prediction count must match target count")
+    matrix = confusion_matrix(targets, predictions, labels=labels)
     metrics = {
-        "accuracy": float(accuracy_score(data.targets, predictions)),
+        "accuracy": float(accuracy_score(targets, predictions)),
         "macro_f1": float(
             f1_score(
-                data.targets,
+                targets,
                 predictions,
                 labels=labels,
                 average="macro",
@@ -237,7 +257,7 @@ def evaluate_classifier(
         ),
         "macro_precision": float(
             precision_score(
-                data.targets,
+                targets,
                 predictions,
                 labels=labels,
                 average="macro",
@@ -246,7 +266,7 @@ def evaluate_classifier(
         ),
         "macro_recall": float(
             recall_score(
-                data.targets,
+                targets,
                 predictions,
                 labels=labels,
                 average="macro",
@@ -257,7 +277,7 @@ def evaluate_classifier(
     return EvaluationResult(
         model_name=model_name,
         split_name=split_name,
-        records=data.records,
+        records=len(targets),
         metrics=metrics,
         labels=labels,
         confusion_matrix=tuple(

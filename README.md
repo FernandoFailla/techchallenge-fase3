@@ -365,6 +365,7 @@ adota a interpretação mais restritiva, CC BY-SA 4.0, e mantém a atribuição.
 
 - [Decisão teórica de cloud](docs/decisao-cloud.md)
 - [Roteiro e checklist STAR](docs/roteiro-video-star.md)
+- [Notebook de avaliação e interpretabilidade do champion](notebooks/08_champion_evaluation_interpretability.py)
 - [ADR de dados](docs/adr/0001-dominio-e-dataset.md)
 - [ADR de arquitetura](docs/adr/0002-arquitetura-do-mvp.md)
 - [Plano e gates do MVP](docs/plano-mvp.md)
