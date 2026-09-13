@@ -15,7 +15,7 @@ Se esta é sua primeira vez no projeto, siga esta sequência sem pular etapas:
 1. Instale os requisitos descritos em [Pré-requisitos](#pré-requisitos).
 2. Clone o repositório, copie `.env.example` para `.env` e configure o acesso ao
    remote DVC, conforme [Preparar a máquina](#1-preparar-a-máquina).
-3. Recupere os dados versionados com `make pull-data`.
+3. Execute `make setup` para configurar as credenciais e recuperar os dados.
 4. Inicie MLflow e Airflow, execute a DAG `training_pipeline` uma vez para criar
    o primeiro modelo `champion`.
 5. Inicie API, Prometheus e Grafana com `make observability`.
@@ -88,16 +88,22 @@ credenciais.
 ```bash
 git clone https://github.com/FernandoFailla/techchallenge-fase3.git
 cd techchallenge-fase3
-cp .env.example .env
-uv sync --all-groups
-uv run pre-commit install
+make setup
 ```
 
-Edite `.env` e preencha apenas `GDRIVE_CLIENT_ID` e `GDRIVE_CLIENT_SECRET` com
-as credenciais recebidas do mantenedor. Os campos `MLFLOW_*` podem permanecer
-com os valores de exemplo. Os comandos `make pull-data` e `make dvc-reauth`
-carregam `.env` automaticamente; nao e necessario exportar as variaveis antes de
-executa-los.
+O comando `make setup` cria `.env` a partir de `.env.example` somente se ele
+ainda nao existir, sincroniza as dependencias e instala os hooks locais. Ele
+nunca sobrescreve um `.env` existente. Em seguida, solicita `GDRIVE_CLIENT_ID`
+e `GDRIVE_CLIENT_SECRET`. Se elas forem informadas, recupera a base versionada
+via DVC. Se nao forem, solicita `KAGGLE_API_TOKEN` sem exibi-lo no terminal e
+baixa a fonte publica do Kaggle. Os campos `MLFLOW_*` podem permanecer com os
+valores de exemplo.
+
+O caminho Kaggle baixa somente `data/raw/synthetic_v1.csv`. Para criar a base
+deterministica a partir do zero, inicie o Airflow com `make airflow` e execute
+manualmente a DAG `prepare_modeling_base`. Os comandos `make pull-data` e
+`make dvc-reauth` carregam `.env` automaticamente; nao e necessario exportar
+as variaveis antes de executa-los.
 
 ### Acesso ao Google Drive: responsabilidades
 

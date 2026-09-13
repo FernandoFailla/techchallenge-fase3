@@ -8,7 +8,7 @@ DATA_DIR := data/raw
 DVC_GDRIVE_TOKEN_DIR ?= $(HOME)/.local/state/techchallenge
 DVC_GDRIVE_TOKEN_FILE ?= $(DVC_GDRIVE_TOKEN_DIR)/gdrive-user-credentials.json
 
-.PHONY: api api-benchmark api-build api-down api-load-test airflow airflow-down airflow-password airflow-reset check docker-config download-data dvc-reauth mlflow mlflow-down observability observability-down pull-data
+.PHONY: api api-benchmark api-build api-down api-load-test airflow airflow-down airflow-password airflow-reset check docker-config download-data dvc-reauth mlflow mlflow-down observability observability-down pull-data setup
 
 help:
 	@printf "Available targets:\n"
@@ -30,9 +30,13 @@ help:
 	@printf "  download-data  Download KurMed-Triage v1 to %s\n" "$(DATA_DIR)"
 	@printf "  pull-data      Download the DVC-tracked dataset\n"
 	@printf "  dvc-reauth     Remove this project's local Google OAuth token and pull data again\n"
+	@printf "  setup          Configure credentials, sync dependencies, install hooks, and fetch source data\n"
 
 check:
 	@uv run pre-commit run --all-files
+
+setup:
+	@bash scripts/setup.sh
 
 airflow:
 	@AIRFLOW_UID="$$(id -u)" docker compose -f compose.airflow.yml up --build
