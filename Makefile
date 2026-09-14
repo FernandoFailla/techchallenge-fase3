@@ -82,8 +82,7 @@ docker-config:
 
 download-data:
 	@test -n "$$KAGGLE_API_TOKEN" || (printf "%s\n" "KAGGLE_API_TOKEN must be exported before running make download-data." >&2; exit 1)
-	@mkdir -p "$(DATA_DIR)"
-	@uv run python -c "import kagglehub; kagglehub.dataset_download('$(KAGGLE_DATASET)', output_dir='$(DATA_DIR)')"
+	@uv run python scripts/download_kaggle_data.py
 
 pull-data:
 	@test -n "$$GDRIVE_CLIENT_ID" || (printf "%s\n" "GDRIVE_CLIENT_ID must be exported before running make pull-data." >&2; exit 1)

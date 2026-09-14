@@ -154,8 +154,10 @@ conta que possui acesso à pasta Google Drive compartilhada e retorne ao
 terminal. O comando deve terminar sem arquivos modificados.
 
 `make download-data` é apenas uma alternativa para obter a fonte pública via
-`KAGGLE_API_TOKEN`. Ele não substitui `make pull-data` para reproduzir a base
-aprovada ou o modelo deste repositório.
+`KAGGLE_API_TOKEN`. Ele baixa em um diretório temporário e copia somente
+`synthetic_v1.csv` para `data/raw`, preservando os ponteiros DVC versionados.
+Ele não substitui `make pull-data` para reproduzir a base aprovada ou o modelo
+deste repositório.
 
 ### 3. Criar o primeiro modelo champion
 
