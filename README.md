@@ -377,13 +377,6 @@ adota a interpretação mais restritiva, CC BY-SA 4.0, e mantém a atribuição.
 - O corpus é sintético e pequeno; métricas não demonstram validade clínica,
   segurança, generalização ou justiça entre populações.
 
-## Vídeo STAR
-
-Demonstração em até cinco minutos, seguindo o roteiro em
-`docs/roteiro-video-star.md` e os slides gerados por `make presentation-slides`.
-
-- Link do vídeo: `[preencher com a URL publicada]`
-
 ## Documentação Complementar
 
 O arquivo em `docs/` e o template. Gere e abra a versao preenchida:
