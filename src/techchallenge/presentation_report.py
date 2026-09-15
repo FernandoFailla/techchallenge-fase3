@@ -482,7 +482,15 @@ def _git_commit() -> str:
         text=True,
     )
     status = subprocess.run(
-        ["git", "status", "--porcelain", "--", ".", ":(exclude).ai-jail"],
+        [
+            "git",
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ".",
+            ":(exclude).ai-jail",
+        ],
         check=True,
         capture_output=True,
         text=True,

@@ -80,6 +80,7 @@ presentation-slides:
 
 presentation-evidence: check docker-config
 	@docker compose -f compose.mlflow.yml up --build --detach --wait --wait-timeout 300
+	@docker compose -f compose.mlflow.yml up --detach --wait --wait-timeout 180 --force-recreate --no-deps api
 	@$(MAKE) api-benchmark
 	@$(MAKE) api-load-test
 	@uv run python -m techchallenge.presentation_report --strict
