@@ -336,26 +336,27 @@ Prometheus coletar as métricas e atualizar o dashboard Grafana.
 
 ## Resultados Medidos
 
-Snapshot executado nesta cópia em 23/08/2026, Linux x86_64 com `nproc=16`,
-dataset DVC `data/processed/modeling_base.parquet` (2.000 registros; ponteiro
-MD5 `023d3b5fe03abd10ddd21aa84f8baa00`). São medições locais de uma execução,
-não representam SLO, capacidade de produção ou garantia de repetição em outra
-máquina.
+Execução local realizada nesta cópia em 15/09/2026, Linux x86_64 com
+`nproc=16`, dataset DVC `data/processed/modeling_base.parquet` (2.000 registros;
+ponteiro MD5 `023d3b5fe03abd10ddd21aa84f8baa00`). São medições locais de uma
+execução, não representam SLO, capacidade de produção ou garantia de repetição
+em outra máquina.
 
 | Etapa | Medição observada | Protocolo da execução |
 |---|---:|---|
 | Baseline | Dummy Macro-F1 validação `0.187`; TF-IDF + Random Forest `0.678` | seleção na validação; Random Forest selecionado |
 | Teste reservado | Macro-F1 `0.758`; acurácia `0.756` | modelo selecionado, 299 registros de teste |
-| ONNX | scikit-learn `36.529 ms`; ONNX Runtime `0.417 ms`; `87.686x` | snapshot histórico: média por texto; 64 referências de validação, 1 warm-up e 5 repetições |
+| ONNX | scikit-learn `46.231 ms`; ONNX Runtime `0.570 ms`; `81.046x` | média por texto; 20 warm-ups e 500 predições individuais |
+| ONNX P50/P95 | scikit-learn `47.314/49.812 ms`; ONNX Runtime `0.561/0.626 ms` | mesmas 500 predições; percentis agregados |
 | Paridade ONNX | `1.000` | 299 previsões do teste reservado iguais às do scikit-learn |
-| HTTP local | média `2.653 ms`; P50 `2.612 ms`; P95 `2.998 ms` | 20 warm-ups e 200 `POST /predict` sequenciais; API Docker; modelo MLflow versão `5` |
+| HTTP local | média `2.577 ms`; P50 `2.546 ms`; P95 `2.923 ms` | 20 warm-ups e 200 `POST /predict` sequenciais; API Docker; modelo MLflow versão `6` |
 
 O benchmark HTTP registra somente agregados no experimento MLflow
 `kan-24-http-benchmark`. O protocolo ONNX vigente executa 20 warm-ups e 500
 predições individuais determinísticas, registrando média, P50 e P95 agregados
-para scikit-learn e ONNX Runtime, sem persistir textos nem predições. O snapshot
-histórico acima não atende a esse protocolo; reexecute o benchmark na máquina de
-avaliação antes de alegar esse gate como atendido.
+para scikit-learn e ONNX Runtime, sem persistir textos nem predições. Para
+reproduzir e conferir estes números, execute a DAG `training_pipeline`, regenere
+a API com `make presentation-evidence` e consulte `make presentation-report`.
 
 ## Dados, Segurança E Limitações
 
@@ -375,6 +376,13 @@ adota a interpretação mais restritiva, CC BY-SA 4.0, e mantém a atribuição.
   escalabilidade comprovada, monitoramento de drift ou retreinamento automático.
 - O corpus é sintético e pequeno; métricas não demonstram validade clínica,
   segurança, generalização ou justiça entre populações.
+
+## Vídeo STAR
+
+Demonstração em até cinco minutos, seguindo o roteiro em
+`docs/roteiro-video-star.md` e os slides gerados por `make presentation-slides`.
+
+- Link do vídeo: `[preencher com a URL publicada]`
 
 ## Documentação Complementar
 

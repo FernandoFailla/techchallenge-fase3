@@ -55,7 +55,8 @@ validate_modeling_base
 ```
 
 Essa execucao atualiza qualidade, benchmark ONNX, paridade, bundle registrado e
-alias `champion`. Nao use o snapshot historico do README como resultado atual.
+alias `champion`. O README mostra a ultima execucao local, mas regenere os
+numeros do commit demonstrado com `make presentation-report`.
 
 ### Terminal 3: stack final e evidencias
 
@@ -179,10 +180,12 @@ visual ao trocar de tela.
 **Fala:**
 
 > O TF-IDF permanece em Python e o Random Forest e executado pelo ONNX Runtime.
-> Primeiro verifico paridade: as mesmas classes nas mesmas entradas do teste. So
-> depois comparo latencia, com 20 warm-ups e 500 predicoes individuais. A tabela
-> mostra media, P50 e P95 antes e depois. No MLflow, estas sao as runs do
-> benchmark e o bundle registrado como champion.
+> Primeiro verifico paridade: as mesmas classes nas mesmas entradas do teste,
+> paridade de 1,000 nas 299 previsoes. So depois comparo latencia, com 20 warm-ups
+> e 500 predicoes individuais. A media caiu de 46,231 para 0,570 milissegundos, um
+> speedup de 81 vezes. O P50 caiu de 47,314 para 0,561 e o P95 de 49,812 para
+> 0,626 milissegundos. No MLflow, estas sao as runs do benchmark e o bundle
+> registrado como champion v6.
 
 ### 2:25-3:05 - Action: observabilidade
 
@@ -192,9 +195,11 @@ visual ao trocar de tela.
 
 > A API instrumentada expoe contagem e histograma de duracao. O Prometheus coleta
 > a cada 15 segundos e o Grafana e provisionado como codigo. Os tres paineis
-> mostram total de requisicoes, latencia P95 e taxa de erro 5xx. A carga foi
-> gerada com dados sinteticos. Como o total e maior que zero, a taxa de zero por
-> cento confirma que nao houve respostas 5xx nessa carga.
+> mostram total de requisicoes, latencia P95 e taxa de erro 5xx. Gerei 500
+> requisicoes sinteticas: a taxa de erro ficou em zero por cento, ou seja, nenhuma
+> resposta 5xx. Sob concorrencia de 20 workers o P95 sobe para cerca de 63
+> milissegundos; no benchmark sequencial ele e de 2,923 milissegundos. A diferenca
+> e o efeito da concorrencia.
 
 ### 3:05-4:15 - Result: numeros
 
@@ -202,9 +207,11 @@ visual ao trocar de tela.
 
 **Fala:**
 
-> Fechando o ciclo: o champion servido, o Macro-F1 do teste, o speedup do ONNX e
-> a latencia HTTP da API otimizada. O relatorio confirma que a versao servida e
-> o champion, que os hashes DVC sao iguais e que a configuracao avaliada
+> Fechando o ciclo: o champion servido e a versao 6, o Macro-F1 do teste e 0,758
+> e a acuracia 0,756 em 299 registros. O ONNX deu speedup medio de 81 vezes. Na
+> API otimizada, o benchmark HTTP sequencial mediu media de 2,577, P50 de 2,546 e
+> P95 de 2,923 milissegundos em 200 requisicoes. O relatorio confirma que a versao
+> servida e o champion, que os hashes DVC sao iguais e que a configuracao avaliada
 > corresponde ao modelo promovido. O benchmark HTTP mede o sistema completo; a
 > atribuicao do ganho ao ONNX vem da comparacao equivalente do slide anterior.
 
@@ -224,22 +231,27 @@ demonstrado e nao apresente o gate como aprovado.
 > calibradas, sem deploy cloud real e, principalmente, sem qualquer garantia de
 > uso clinico.
 
-## Valores Que Devem Estar Preenchidos
+## Numeros Para Falar
 
-Todos aparecem em `make presentation-report` e nos slides gerados.
+Valores da execucao local de 15/09/2026 (commit `3d54f35`). Regenere com
+`make presentation-report` antes de gravar, pois uma nova execucao muda os
+numeros.
 
-| Evidencia | Fonte atual |
-|---|---|
-| Commit demonstrado | Git `HEAD` |
-| Versao `champion` | alias no MLflow Model Registry |
-| Acuracia e Macro-F1 | run final de `kan-11-baseline-nlp` |
-| Protocolo ONNX | run final de `kan-10-onnx-benchmark` |
-| Media, P50 e P95 sklearn/ONNX | run final de `kan-10-onnx-benchmark` |
-| Reducao e speedup | calculados pelo relatorio |
-| Paridade e correspondencias | run de paridade `kan-10-onnx-benchmark` |
-| HTTP media, P50 e P95 | ultima run `kan-24-http-benchmark` |
-| Total e taxa 5xx | dashboard Grafana apos a carga |
-| CI lint/test/build | GitHub Actions do commit demonstrado |
+| Evidencia | Valor |
+|---|---:|
+| Commit demonstrado | `3d54f35` |
+| Versao `champion` | `6` |
+| Acuracia / Macro-F1 no teste | `0.756` / `0.758` |
+| Registros de teste | `299` |
+| Protocolo ONNX | 20 warm-ups, 500 predicoes |
+| ONNX media (sklearn / ONNX) | `46.231 ms` / `0.570 ms` |
+| ONNX P50 (sklearn / ONNX) | `47.314 ms` / `0.561 ms` |
+| ONNX P95 (sklearn / ONNX) | `49.812 ms` / `0.626 ms` |
+| Reducao media / speedup | `98.8%` / `81.046x` |
+| Paridade / correspondencias | `1.000` / `299` |
+| HTTP media / P50 / P95 | `2.577` / `2.546` / `2.923 ms` |
+| Requisicoes HTTP medidas | `200` |
+| Carga no Grafana | `500` requisicoes, `0%` de 5xx |
 
 ## Checklist Antes De Gravar
 
