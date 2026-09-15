@@ -13,3 +13,5 @@ __pycache__/
 .ruff_cache/
 .venv/
 .project-pending.md
+presentation-slides.generated.*
+docs/apresentacao-slides.html

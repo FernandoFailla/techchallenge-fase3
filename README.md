@@ -26,6 +26,12 @@ O primeiro bootstrap demora mais porque treina, avalia, converte e registra um
 modelo. Depois disso, os volumes Docker preservam o MLflow e basta iniciar a
 stack de observabilidade novamente.
 
+Para uma futura inferencia em nuvem, a decisao teorica e usar Cloud Run como
+ponto de partida: a API e stateless, containerizada e precisa responder em tempo
+real. Batch foi rejeitado para o contrato interativo, mas continua adequado ao
+treinamento e ao reprocessamento. Nenhum deploy cloud foi realizado; custos,
+cold start, seguranca e desempenho em nuvem nao foram medidos.
+
 ## O Que Cada Componente Faz
 
 ```text
@@ -355,8 +361,9 @@ avaliação antes de alegar esse gate como atendido.
 
 A fonte é [KurMed-Triage v1 no Kaggle](https://www.kaggle.com/datasets/alanjafari/kurmed-triage),
 atribuída a Alan Jafari, com 2.000 exemplos sintéticos em inglês e target
-publicado `urgency` (`low`, `medium`, `high`). A API apresenta esses rótulos como
-`normal`, `atencao` e `urgente`; não cria nem altera a taxonomia.
+publicado `urgency` (`low`, `medium`, `high`). A API preserva esses rótulos
+técnicos; eles correspondem conceitualmente a `normal`, `atencao` e `urgente`,
+sem criar ou alterar a taxonomia original.
 
 Os metadados públicos consultados divergem entre CC BY 4.0 e CC BY-SA 4.0. Até
 a confirmação por um arquivo de licença inequívoco da versão usada, o projeto
@@ -371,8 +378,16 @@ adota a interpretação mais restritiva, CC BY-SA 4.0, e mantém a atribuição.
 
 ## Documentação Complementar
 
+O arquivo em `docs/` e o template. Gere e abra a versao preenchida:
+
+```bash
+make presentation-slides
+npx @marp-team/marp-cli@latest --preview presentation-slides.generated.md
+```
+
 - [Decisão teórica de cloud](docs/decisao-cloud.md)
 - [Roteiro e checklist STAR](docs/roteiro-video-star.md)
+- [Template da apresentação de slides](docs/apresentacao-slides.md)
 - [Notebook de avaliação e interpretabilidade do champion](notebooks/08_champion_evaluation_interpretability.py)
 - [ADR de dados](docs/adr/0001-dominio-e-dataset.md)
 - [ADR de arquitetura](docs/adr/0002-arquitetura-do-mvp.md)

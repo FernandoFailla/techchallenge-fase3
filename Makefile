@@ -3,12 +3,11 @@
 -include .env
 export GDRIVE_CLIENT_ID GDRIVE_CLIENT_SECRET KAGGLE_API_TOKEN
 
-KAGGLE_DATASET := alanjafari/kurmed-triage/versions/1
 DATA_DIR := data/raw
 DVC_GDRIVE_TOKEN_DIR ?= $(HOME)/.local/state/techchallenge
 DVC_GDRIVE_TOKEN_FILE ?= $(DVC_GDRIVE_TOKEN_DIR)/gdrive-user-credentials.json
 
-.PHONY: api api-benchmark api-build api-down api-load-test airflow airflow-down airflow-password airflow-reset check docker-config download-data dvc-reauth mlflow mlflow-down observability observability-down pull-data setup
+.PHONY: api api-benchmark api-build api-down api-load-test airflow airflow-down airflow-password airflow-reset check docker-config download-data dvc-reauth mlflow mlflow-down observability observability-down presentation-evidence presentation-report presentation-slides pull-data setup
 
 help:
 	@printf "Available targets:\n"
@@ -31,6 +30,9 @@ help:
 	@printf "  pull-data      Download the DVC-tracked dataset\n"
 	@printf "  dvc-reauth     Remove this project's local Google OAuth token and pull data again\n"
 	@printf "  setup          Configure credentials, sync dependencies, install hooks, and fetch source data\n"
+	@printf "  presentation-report Print the latest safe aggregate evidence from MLflow\n"
+	@printf "  presentation-slides Generate a local slide deck filled with the latest MLflow metrics\n"
+	@printf "  presentation-evidence Validate, refresh API metrics, generate traffic, and print the report\n"
 
 check:
 	@uv run pre-commit run --all-files
@@ -64,6 +66,24 @@ api-benchmark:
 
 api-load-test:
 	@uv run python -m techchallenge.api_load_test
+
+presentation-report:
+	@uv run python -m techchallenge.presentation_report
+
+presentation-slides:
+	@temporary_file="$$(mktemp .presentation-slides.XXXXXX)"; \
+		trap 'rm -f "$$temporary_file"' EXIT; \
+		uv run python -m techchallenge.presentation_report --slides > "$$temporary_file"; \
+		mv "$$temporary_file" presentation-slides.generated.md
+	@printf "%s\n" "Generated presentation-slides.generated.md"
+	@printf "%s\n" "Preview: npx @marp-team/marp-cli@latest --preview presentation-slides.generated.md"
+
+presentation-evidence: check docker-config
+	@docker compose -f compose.mlflow.yml up --build --detach --wait --wait-timeout 300
+	@$(MAKE) api-benchmark
+	@$(MAKE) api-load-test
+	@uv run python -m techchallenge.presentation_report --strict
+	@$(MAKE) presentation-slides
 
 api-build:
 	@docker compose -f compose.mlflow.yml build api

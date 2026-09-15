@@ -185,6 +185,11 @@ def _environment_float(name: str, default: float) -> float:
     return default if raw_value is None else float(raw_value)
 
 
+def _exit_on_failures(result: ApiLoadTestResult) -> None:
+    if result.failed:
+        raise SystemExit("API load test recorded failed requests")
+
+
 def main() -> None:
     """Run the default synthetic load test and print only aggregate results."""
     result = run_api_load_test(
@@ -208,6 +213,7 @@ def main() -> None:
         f"requests_per_second={result.requests_per_second:.2f}, "
         f"p95_latency_ms={result.p95_latency_ms}"
     )
+    _exit_on_failures(result)
 
 
 if __name__ == "__main__":

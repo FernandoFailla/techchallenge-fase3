@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from techchallenge.api_load_test import ApiLoadTestConfig, run_api_load_test
+from techchallenge.api_load_test import (
+    ApiLoadTestConfig,
+    _exit_on_failures,
+    run_api_load_test,
+)
 
 
 class RecordingLoadTestClient:
@@ -52,6 +56,9 @@ def test_api_load_test_returns_no_latency_percentiles_when_all_requests_fail() -
     assert result.mean_latency_ms is None
     assert result.p50_latency_ms is None
     assert result.p95_latency_ms is None
+
+    with pytest.raises(SystemExit, match="recorded failed requests"):
+        _exit_on_failures(result)
 
 
 @pytest.mark.parametrize(
